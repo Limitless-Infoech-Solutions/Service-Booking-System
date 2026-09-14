@@ -233,14 +233,13 @@ export default function Home() {
               transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
               className="relative"
             >
-              <div className="relative aspect-4/5 w-full overflow-hidden rounded-[28px] border border-[#181712]/10 bg-linear-to-br from-[#4C6B4C] via-[#33492F] to-[#1B2716] shadow-2xl">
-                <div
-                  className="absolute inset-0 opacity-25 mix-blend-soft-light"
-                  style={{
-                    backgroundImage:
-                      'radial-gradient(circle at 25% 20%, rgba(255,255,255,0.9) 0, transparent 45%), radial-gradient(circle at 80% 75%, rgba(255,255,255,0.5) 0, transparent 40%)',
-                  }}
-                />
+              <div className="relative aspect-4/5 w-full overflow-hidden rounded-[28px] border  ">
+              <div
+  className="absolute inset-0  bg-cover bg-center"
+  style={{
+    backgroundImage: `url('https://media.istockphoto.com/id/2210372202/photo/online-booking-smile-and-tablet-with-woman-in-spa-for-appointment-or-schedule-agenda.webp?a=1&b=1&s=612x612&w=0&k=20&c=R33fz0phqIG0p9NeQmywOd6fLfFm392j-ut9N4oKTo4=')`,
+  }}
+/>
                 <div className="absolute inset-x-8 bottom-8 rounded-2xl border border-white/15 bg-white/10 p-5 backdrop-blur-xs">
                   <p className="font-serif text-lg italic text-[#FAF8F4]">&ldquo;Effortless to book, even easier to love.&rdquo;</p>
                 </div>
