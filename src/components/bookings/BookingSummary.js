@@ -23,8 +23,6 @@ import { DISCOUNT_THRESHOLD, computeBookingTotals } from "@/data/pricing"
 export default function BookingSummary({
   selectedServices,
   onRemove,
-  onIncrement,
-  onDecrement,
   selectedDate,
   selectedTime,
   onContinue,
@@ -104,41 +102,10 @@ export default function BookingSummary({
                       </span>
                     </div>
 
-                    {/* Quantity stepper */}
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onDecrement(service.id)}
-                        aria-label={`Decrease ${service.name} quantity`}
-                        className="flex h-6 w-6 items-center justify-center rounded-full border border-black/10 bg-white text-slate-600 transition hover:bg-slate-100"
-                      >
-                        <Minus size={12} />
-                      </button>
-
-                      <span className="w-4 text-center text-xs font-semibold text-slate-900">
-                        {service.qty}
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={() => onIncrement(service.id)}
-                        aria-label={`Increase ${service.name} quantity`}
-                        className="flex h-6 w-6 items-center justify-center rounded-full bg-[#6862b5] text-white transition hover:bg-[#564f9e]"
-                      >
-                        <Plus size={12} />
-                      </button>
-                    </div>
+                   
                   </div>
 
-                  {/* Remove */}
-                  <button
-                    type="button"
-                    onClick={() => onRemove(service.id)}
-                    aria-label={`Remove ${service.name}`}
-                    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-white hover:text-slate-900"
-                  >
-                    <X size={13} />
-                  </button>
+                 
                 </div>
               </motion.div>
             ))}
