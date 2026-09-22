@@ -3,13 +3,12 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowLeft, Check, CalendarDays, ArrowRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect} from "react";
 import { useRouter } from "next/navigation";
 import ServiceSelectionStep from "@/components/bookings/ServiceSelectionStep";
 import DateTimeStep from "@/components/bookings/DateTimeStep";
 import PaymentStep from "@/components/bookings/PaymentStep";
 import BookingSummary from "@/components/bookings/BookingSummary";
-import { services } from "@/data/serviceData";
 import { computeBookingTotals } from "@/data/pricing";
 
 const TOTAL_STEPS = 4;
@@ -22,6 +21,28 @@ const STEP_COPY = {
 };
 
 export default function AppointmentPage() {
+  const [services, setServices] = useState([]);
+  useEffect(() => {
+    async function fetchServices() {
+      const response = await fetch("/api/services");
+      const data = await response.json();
+  
+      const formattedServices = data.map((service) => ({
+        id: service.id,
+        name: service.name,
+        description: service.description,
+        category: service.category,
+        duration: service.duration_minutes,
+        price: service.price,
+        badge: service.badge,
+        image: service.image,
+      }));
+  
+      setServices(formattedServices);
+    }
+  
+    fetchServices();
+  }, []);
   const [step, setStep] = useState(1);
   const router = useRouter();
   // Step 1 — services
@@ -47,7 +68,7 @@ export default function AppointmentPage() {
   const categories = useMemo(() => {
     const uniqueCategories = [...new Set(services.map((s) => s.category))];
     return ["All", ...uniqueCategories];
-  }, []);
+  }, [services]);
 
   const filteredServices = useMemo(() => {
     return services.filter((service) => {
@@ -60,9 +81,8 @@ export default function AppointmentPage() {
 
       return matchesCategory && matchesSearch;
     });
-  }, [activeCategory, searchQuery]);
+  }, [services, activeCategory, searchQuery]);
 
-  // Adding a service from a card starts it at quantity 1.
   // Clicking a service that's already selected removes it entirely.
   const handleSelectService = (service) => {
     setSelectedServices((current) => {
@@ -148,7 +168,7 @@ export default function AppointmentPage() {
 
   return (
     <div className="min-h-screen bg-[#fbfaf8]">
-      <main className="px-4 py-6 sm:px-6 lg:px-8">
+    <main className="px-4 py-6 pb-24 sm:px-6 sm:pb-24 lg:px-8 lg:pb-6">
         <div className="mx-auto w-full max-w-[1600px]">
           {/* Header */}
           <header>
@@ -217,12 +237,15 @@ export default function AppointmentPage() {
               )}
 
               {step === 2 && (
-                <DateTimeStep
-                  selectedDate={selectedDate}
-                  selectedTime={selectedTime}
-                  onSelectDate={handleSelectDate}
-                  onSelectTime={setSelectedTime}
-                />
+               <DateTimeStep
+               selectedDate={selectedDate}
+               selectedTime={selectedTime}
+               onSelectDate={handleSelectDate}
+               onSelectTime={setSelectedTime}
+               serviceIds={selectedServices.map(
+                 (service) => service.id
+               )}
+             />
               )}
 
               {step === 3 && (
