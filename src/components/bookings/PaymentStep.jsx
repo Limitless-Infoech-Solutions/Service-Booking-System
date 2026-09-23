@@ -1,11 +1,31 @@
+
 "use client";
 
-import { CreditCard, Lock, ShieldCheck, Smartphone, Store } from "lucide-react";
+import {
+  CreditCard,
+  Lock,
+  ShieldCheck,
+  Smartphone,
+  Store,
+  ArrowRight,
+} from "lucide-react";
 
 const PAYMENT_METHODS = [
-  { id: "card", label: "Credit / Debit card", icon: CreditCard },
-  { id: "upi", label: "UPI", icon: Smartphone },
-  { id: "cash", label: "Pay at salon", icon: Store },
+  {
+    id: "card",
+    label: "Credit / Debit card",
+    icon: CreditCard,
+  },
+  {
+    id: "upi",
+    label: "UPI",
+    icon: Smartphone,
+  },
+  {
+    id: "cash",
+    label: "Pay at salon",
+    icon: Store,
+  },
 ];
 
 export default function PaymentStep({
@@ -20,9 +40,10 @@ export default function PaymentStep({
   onUpiIdChange,
   agreedToTerms,
   onAgreedToTermsChange,
+  onConfirmBooking,
 }) {
   return (
-    <>
+    <div className="w-full">
       {/* Heading */}
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#6862b5] sm:text-xs">
@@ -50,11 +71,15 @@ export default function PaymentStep({
               <span className="text-xs font-medium text-slate-500">
                 Full name
               </span>
+
               <input
                 type="text"
                 value={contact.name}
                 onChange={(event) =>
-                  onContactChange({ ...contact, name: event.target.value })
+                  onContactChange({
+                    ...contact,
+                    name: event.target.value,
+                  })
                 }
                 placeholder="Priya Sharma"
                 className="mt-1.5 h-11 w-full rounded-xl border border-black/10 bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400"
@@ -65,11 +90,15 @@ export default function PaymentStep({
               <span className="text-xs font-medium text-slate-500">
                 Phone number
               </span>
+
               <input
                 type="tel"
                 value={contact.phone}
                 onChange={(event) =>
-                  onContactChange({ ...contact, phone: event.target.value })
+                  onContactChange({
+                    ...contact,
+                    phone: event.target.value,
+                  })
                 }
                 placeholder="98765 43210"
                 className="mt-1.5 h-11 w-full rounded-xl border border-black/10 bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400"
@@ -80,11 +109,15 @@ export default function PaymentStep({
               <span className="text-xs font-medium text-slate-500">
                 Email
               </span>
+
               <input
                 type="email"
                 value={contact.email}
                 onChange={(event) =>
-                  onContactChange({ ...contact, email: event.target.value })
+                  onContactChange({
+                    ...contact,
+                    email: event.target.value,
+                  })
                 }
                 placeholder="priya@email.com"
                 className="mt-1.5 h-11 w-full rounded-xl border border-black/10 bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400"
@@ -108,7 +141,9 @@ export default function PaymentStep({
                 <button
                   key={method.id}
                   type="button"
-                  onClick={() => onPaymentMethodChange(method.id)}
+                  onClick={() =>
+                    onPaymentMethodChange(method.id)
+                  }
                   className={`flex flex-col items-center gap-2 rounded-xl border px-4 py-4 text-center transition ${
                     active
                       ? "border-slate-900 bg-slate-900 text-white"
@@ -116,7 +151,10 @@ export default function PaymentStep({
                   }`}
                 >
                   <Icon size={20} strokeWidth={1.8} />
-                  <span className="text-xs font-medium">{method.label}</span>
+
+                  <span className="text-xs font-medium">
+                    {method.label}
+                  </span>
                 </button>
               );
             })}
@@ -129,6 +167,7 @@ export default function PaymentStep({
                 <span className="text-xs font-medium text-slate-500">
                   Card number
                 </span>
+
                 <input
                   type="text"
                   inputMode="numeric"
@@ -148,6 +187,7 @@ export default function PaymentStep({
                 <span className="text-xs font-medium text-slate-500">
                   Expiry (MM/YY)
                 </span>
+
                 <input
                   type="text"
                   value={cardDetails.expiry}
@@ -166,6 +206,7 @@ export default function PaymentStep({
                 <span className="text-xs font-medium text-slate-500">
                   CVV
                 </span>
+
                 <input
                   type="text"
                   inputMode="numeric"
@@ -190,10 +231,13 @@ export default function PaymentStep({
                 <span className="text-xs font-medium text-slate-500">
                   UPI ID
                 </span>
+
                 <input
                   type="text"
                   value={upiId}
-                  onChange={(event) => onUpiIdChange(event.target.value)}
+                  onChange={(event) =>
+                    onUpiIdChange(event.target.value)
+                  }
                   placeholder="yourname@upi"
                   className="mt-1.5 h-11 w-full max-w-sm rounded-xl border border-black/10 bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400"
                 />
@@ -204,11 +248,12 @@ export default function PaymentStep({
           {/* Pay at salon note */}
           {paymentMethod === "cash" && (
             <p className="mt-5 rounded-xl bg-[#f8f7f4] px-4 py-3 text-xs leading-5 text-slate-500">
-              No payment needed now — settle the bill directly at the salon
-              after your appointment.
+              No payment needed now — settle the bill directly at the
+              salon after your appointment.
             </p>
           )}
 
+          {/* Security */}
           <div className="mt-5 flex items-center gap-1.5 text-xs text-slate-400">
             <Lock size={12} />
             Your payment details are encrypted and secure.
@@ -220,21 +265,50 @@ export default function PaymentStep({
           <input
             type="checkbox"
             checked={agreedToTerms}
-            onChange={(event) => onAgreedToTermsChange(event.target.checked)}
+            onChange={(event) =>
+              onAgreedToTermsChange(event.target.checked)
+            }
             className="mt-0.5 h-4 w-4 shrink-0 rounded border-black/20 text-slate-900 focus:ring-slate-400"
           />
+
           <span>
-            I agree to the cancellation policy and terms of service, and
-            confirm the details above are correct.
+            I agree to the cancellation policy and terms of service,
+            and confirm the details above are correct.
           </span>
         </label>
 
-        {/* Security reassurance, mirrors the trust row in the summary */}
+        {/* Security reassurance */}
         <div className="flex items-center gap-2 text-xs text-slate-400">
           <ShieldCheck size={14} />
-          You&apos;ll pay ₹{total} — nothing is charged until you confirm.
+
+          You&apos;ll pay ₹{total} — nothing is charged until you
+          confirm.
+        </div>
+
+        {/* Confirm booking */}
+        <div className="border-t border-black/5 pt-6">
+          <button
+            type="button"
+            onClick={onConfirmBooking}
+            disabled={!agreedToTerms}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f6c945] hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-slate-900 disabled:hover:text-white"
+          >
+            {paymentMethod === "cash"
+              ? "Confirm Booking"
+              : `Continue to Payment · ₹${total}`}
+
+            <ArrowRight size={17} />
+          </button>
+
+          <p className="mt-3 text-center text-xs text-slate-400">
+            {paymentMethod === "cash"
+              ? "No payment is required now."
+              : "Payment integration will be added next."}
+          </p>
         </div>
       </div>
-    </>
+    </div>
   );
 }
+
+

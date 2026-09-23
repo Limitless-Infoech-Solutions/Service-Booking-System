@@ -3,70 +3,111 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowLeft, Check, CalendarDays, ArrowRight } from "lucide-react";
-import { useMemo, useState, useEffect} from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+
 import ServiceSelectionStep from "@/components/bookings/ServiceSelectionStep";
 import DateTimeStep from "@/components/bookings/DateTimeStep";
 import PaymentStep from "@/components/bookings/PaymentStep";
 import BookingSummary from "@/components/bookings/BookingSummary";
-import { computeBookingTotals } from "@/data/pricing";
+import CustomerAuthModal from "@/components/bookings/CustomerAuthModal";
+import BookingReviewStep from "@/components/bookings/BookingReviewStep";
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 
 const STEP_COPY = {
-  1: { label: "Step 1 of 4" },
-  2: { label: "Step 2 of 4" },
-  3: { label: "Step 3 of 4" },
-  4: { label: "Booking confirmed" },
+  1: { label: "Step 1 of 5" },
+  2: { label: "Step 2 of 5" },
+  3: { label: "Step 3 of 5" },
+  4: { label: "Step 4 of 5" },
+  5: { label: "Booking confirmed" },
 };
 
 export default function AppointmentPage() {
   const [services, setServices] = useState([]);
+
   useEffect(() => {
     async function fetchServices() {
-      const response = await fetch("/api/services");
-      const data = await response.json();
-  
-      const formattedServices = data.map((service) => ({
-        id: service.id,
-        name: service.name,
-        description: service.description,
-        category: service.category,
-        duration: service.duration_minutes,
-        price: service.price,
-        badge: service.badge,
-        image: service.image,
-      }));
-  
-      setServices(formattedServices);
+      try {
+        const response = await fetch("/api/services");
+        const data = await response.json();
+
+        console.log("SERVICES API STATUS:", response.status);
+        console.log("SERVICES API RESPONSE:", data);
+
+        const formattedServices = data.map((service) => ({
+          id: service.id,
+          name: service.name,
+          description: service.description,
+          category: service.category,
+          duration: service.duration_minutes,
+          price: service.price,
+          badge: service.badge,
+          image: service.image,
+        }));
+
+        setServices(formattedServices);
+      } catch (error) {
+        console.error("Services API error:", error);
+      }
     }
-  
+
     fetchServices();
   }, []);
+
   const [step, setStep] = useState(1);
   const router = useRouter();
-  // Step 1 — services
+
+  // --------------------------------------------------
+  // STEP 1 — SERVICES
+  // --------------------------------------------------
+
   const [selectedServices, setSelectedServices] = useState([]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Step 2 — date & time
+  // --------------------------------------------------
+  // STEP 2 — DATE & TIME / HOLD
+  // --------------------------------------------------
+
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState(null);
+  const [isHolding, setIsHolding] = useState(false);
 
-  // Step 3 — payment
-  const [contact, setContact] = useState({ name: "", phone: "", email: "" });
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [holdExpiresAt, setHoldExpiresAt] = useState(null);
+  const [authenticatedCustomer, setAuthenticatedCustomer] = useState(null);
+
+  // --------------------------------------------------
+  // BOOKING / PAYMENT STATE
+  // --------------------------------------------------
+
+  const [contact, setContact] = useState({
+    name: "",
+    phone: "",
+    email: "",
+  });
+
   const [paymentMethod, setPaymentMethod] = useState("card");
+
   const [cardDetails, setCardDetails] = useState({
     number: "",
     expiry: "",
     cvv: "",
   });
+
   const [upiId, setUpiId] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
+  // --------------------------------------------------
+  // SERVICE FILTERING
+  // --------------------------------------------------
+
   const categories = useMemo(() => {
-    const uniqueCategories = [...new Set(services.map((s) => s.category))];
+    const uniqueCategories = [
+      ...new Set(services.map((service) => service.category)),
+    ];
+
     return ["All", ...uniqueCategories];
   }, [services]);
 
@@ -83,7 +124,10 @@ export default function AppointmentPage() {
     });
   }, [services, activeCategory, searchQuery]);
 
-  // Clicking a service that's already selected removes it entirely.
+  // --------------------------------------------------
+  // SERVICE SELECTION
+  // --------------------------------------------------
+
   const handleSelectService = (service) => {
     setSelectedServices((current) => {
       const alreadySelected = current.some((item) => item.id === service.id);
@@ -102,75 +146,208 @@ export default function AppointmentPage() {
     );
   };
 
-  // Selecting a new date clears whichever time was picked for the old one,
-  // since availability is date-specific.
+  // --------------------------------------------------
+  // DATE SELECTION
+  // --------------------------------------------------
+
   const handleSelectDate = (date) => {
     setSelectedDate(date);
     setSelectedTime(null);
   };
 
+  // --------------------------------------------------
+  // BACK
+  // --------------------------------------------------
+
   const handleBack = () => {
-    if (step === 1) return; // nothing to go back to — this is the entry step
+    if (step === 1) return;
+
     setStep((current) => current - 1);
   };
 
-  const handleContinue = () => {
+  // --------------------------------------------------
+  // CONTINUE / HOLD
+  // --------------------------------------------------
+
+  const handleContinue = async () => {
+    // STEP 1 → STEP 2
     if (step === 1) {
       setStep(2);
       return;
     }
 
+    // STEP 2 → CREATE HOLD → CUSTOMER AUTH
     if (step === 2) {
-      router.push("/book/login");
-      return;
-    }
-    if (step === 3) {
-      console.log("Submitting payment", {
-        selectedServices,
-        selectedDate,
-        selectedTime,
-        contact,
-        paymentMethod,
-        cardDetails: paymentMethod === "card" ? cardDetails : undefined,
-        upiId: paymentMethod === "upi" ? upiId : undefined,
-      });
+      if (isHolding) return;
 
-      setStep(4);
+      if (!selectedDate || !selectedTime || !selectedServices.length) {
+        return;
+      }
+
+      setIsHolding(true);
+
+      try {
+        const year = selectedDate.getFullYear();
+
+        const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
+
+        const day = String(selectedDate.getDate()).padStart(2, "0");
+
+        const dateString = `${year}-${month}-${day}`;
+
+        const response = await fetch("/api/bookings/hold", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            serviceIds: selectedServices.map((service) => service.id),
+            date: dateString,
+            startTime: selectedTime,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          if (data.code === "SLOT_UNAVAILABLE") {
+            alert(
+              "This slot is no longer available. Please choose another time."
+            );
+          } else {
+            alert(
+              data.error ||
+                data.message ||
+                "Unable to reserve this appointment. Please try again."
+            );
+          }
+
+          return;
+        }
+
+        // Store temporary booking hold.
+        sessionStorage.setItem(
+          "bookingHold",
+          JSON.stringify({
+            holdId: data.holdId,
+            expiresAt: data.expiresAt,
+            serviceIds: selectedServices.map((service) => service.id),
+            date: dateString,
+            startTime: selectedTime,
+          })
+        );
+
+        // Start frontend countdown from backend expiry.
+        setHoldExpiresAt(data.expiresAt);
+
+        // Open customer authentication.
+        setIsAuthModalOpen(true);
+      } catch (error) {
+        console.error("Appointment hold error:", error);
+
+        alert(
+          "Something went wrong while reserving your appointment. Please try again."
+        );
+      } finally {
+        setIsHolding(false);
+      }
+
+      return;
     }
   };
 
-  const { total } = computeBookingTotals(selectedServices);
+  // --------------------------------------------------
+  // CAN CONTINUE
+  // --------------------------------------------------
 
-  const isContactComplete =
-    contact.name.trim() && contact.phone.trim() && contact.email.trim();
+  const canContinue = step === 2 ? Boolean(selectedDate && selectedTime) : true;
 
-  const isPaymentMethodComplete =
-    paymentMethod === "cash" ||
-    (paymentMethod === "card" &&
-      cardDetails.number.trim() &&
-      cardDetails.expiry.trim() &&
-      cardDetails.cvv.trim()) ||
-    (paymentMethod === "upi" && upiId.trim());
-
-  const canContinue =
-    step === 2
-      ? Boolean(selectedDate && selectedTime)
-      : step === 3
-      ? Boolean(isContactComplete && isPaymentMethodComplete && agreedToTerms)
-      : true;
+  // --------------------------------------------------
+  // BOOKING SUMMARY BUTTON LABEL
+  // --------------------------------------------------
 
   const continueLabel =
-    step === 1
-      ? "Continue"
-      : step === 2
-      ? "Confirm date & time"
-      : `Pay ₹${total}`;
+    step === 1 ? "Continue" : step === 2 ? "Confirm date & time" : "";
+
+  // --------------------------------------------------
+  // CUSTOMER AUTH COMPLETE
+  // --------------------------------------------------
+
+  const handleAuthComplete = async (customer) => {
+    try {
+      const bookingHold = sessionStorage.getItem("bookingHold");
+
+      if (!bookingHold) {
+        alert(
+          "Your appointment hold could not be found. Please select the time again."
+        );
+
+        setIsAuthModalOpen(false);
+        return;
+      }
+
+      const hold = JSON.parse(bookingHold);
+
+      const response = await fetch("/api/customers/authenticate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          holdId: hold.holdId,
+          phone: customer.phone,
+          name: customer.name,
+          email: customer.email,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        alert(
+          data.message ||
+            "Unable to attach your details to this booking. Please try again."
+        );
+
+        return;
+      }
+
+      // Customer is now attached to the booking hold.
+      setAuthenticatedCustomer({
+        ...data.customer,
+        isExistingCustomer: customer.isExistingCustomer || false,
+      });
+
+      // Keep customer information available for
+      // later payment / confirmation steps.
+      setContact({
+        name: data.customer.name || "",
+        phone: data.customer.phone || "",
+        email: data.customer.email || "",
+      });
+
+      console.log("Authenticated customer:", data.customer);
+
+      console.log("Updated booking hold:", data.hold);
+
+      setIsAuthModalOpen(false);
+
+      // Customer authentication → Review
+      setStep(3);
+    } catch (error) {
+      console.error("Customer authentication completion error:", error);
+
+      alert(
+        "Something went wrong while completing your booking. Please try again."
+      );
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#fbfaf8]">
-    <main className="px-4 py-6 pb-24 sm:px-6 sm:pb-24 lg:px-8 lg:pb-6">
+      <main className="px-4 py-6 pb-24 sm:px-6 sm:pb-24 lg:px-8 lg:pb-6">
         <div className="mx-auto w-full max-w-[1600px]">
-          {/* Header */}
+          {/* HEADER */}
           <header>
             <div className="flex items-center gap-3">
               {step === 1 ? (
@@ -199,9 +376,11 @@ export default function AppointmentPage() {
               </p>
             </div>
 
-            {/* Step progress */}
+            {/* STEP PROGRESS */}
             <div className="mt-4 flex gap-1.5">
-              {Array.from({ length: TOTAL_STEPS }).map((_, index) => (
+              {Array.from({
+                length: TOTAL_STEPS,
+              }).map((_, index) => (
                 <span
                   key={index}
                   className={`h-1 flex-1 rounded-full transition-colors ${
@@ -212,17 +391,17 @@ export default function AppointmentPage() {
             </div>
           </header>
 
-          {/* Main layout — the summary column starts here, level with the
-              heading, and stays sticky all the way down past the content. */}
+          {/* MAIN LAYOUT */}
           <div
             className={
-              step === 4
+              step === 5
                 ? "mt-6"
                 : "mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-7 xl:grid-cols-[minmax(0,1fr)_350px]"
             }
           >
             {/* LEFT SIDE */}
             <section className="min-w-0">
+              {/* STEP 1 — SERVICES */}
               {step === 1 && (
                 <ServiceSelectionStep
                   categories={categories}
@@ -236,21 +415,36 @@ export default function AppointmentPage() {
                 />
               )}
 
+              {/* STEP 2 — DATE & TIME */}
               {step === 2 && (
-               <DateTimeStep
-               selectedDate={selectedDate}
-               selectedTime={selectedTime}
-               onSelectDate={handleSelectDate}
-               onSelectTime={setSelectedTime}
-               serviceIds={selectedServices.map(
-                 (service) => service.id
-               )}
-             />
+                <DateTimeStep
+                  selectedDate={selectedDate}
+                  selectedTime={selectedTime}
+                  onSelectDate={handleSelectDate}
+                  onSelectTime={setSelectedTime}
+                  serviceIds={selectedServices.map((service) => service.id)}
+                />
               )}
 
+              {/* STEP 3 — REVIEW */}
               {step === 3 && (
+                <BookingReviewStep
+                  customer={authenticatedCustomer}
+                  selectedServices={selectedServices}
+                  selectedDate={selectedDate}
+                  selectedTime={selectedTime}
+                  onContinue={() => setStep(4)}
+                />
+              )}
+
+              {/* STEP 4 — PAYMENT */}
+              {step === 4 && (
                 <PaymentStep
-                  total={total}
+                  total={selectedServices.reduce(
+                    (sum, service) =>
+                      sum + Number(service.price || 0) * (service.qty || 1),
+                    0
+                  )}
                   contact={contact}
                   onContactChange={setContact}
                   paymentMethod={paymentMethod}
@@ -261,12 +455,17 @@ export default function AppointmentPage() {
                   onUpiIdChange={setUpiId}
                   agreedToTerms={agreedToTerms}
                   onAgreedToTermsChange={setAgreedToTerms}
+                  onConfirmBooking={() => {
+                    router.push("/book/sucess");
+                  }}
                 />
               )}
-              {step === 4 && (
+
+              {/* STEP 5 — CONFIRMATION */}
+              {step === 5 && (
                 <div className="w-full">
                   <div className="mx-auto max-w-3xl">
-                    {/* Success */}
+                    {/* SUCCESS */}
                     <div className="text-center">
                       <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50">
                         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white">
@@ -291,7 +490,7 @@ export default function AppointmentPage() {
                       </p>
                     </div>
 
-                    {/* Booking Details */}
+                    {/* BOOKING DETAILS */}
                     <div className="mt-10 overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
                       <div className="border-b border-black/5 px-5 py-5 sm:px-7">
                         <h2 className="text-lg font-semibold text-slate-900">
@@ -300,7 +499,7 @@ export default function AppointmentPage() {
                       </div>
 
                       <div className="p-5 sm:p-7">
-                        {/* Selected services */}
+                        {/* SELECTED SERVICES */}
                         <div className="space-y-4">
                           {selectedServices.map((service) => (
                             <div
@@ -315,7 +514,7 @@ export default function AppointmentPage() {
                                     width={200}
                                     height={200}
                                     className="h-full w-full object-cover"
-                                  ></Image>
+                                  />
                                 )}
                               </div>
 
@@ -330,13 +529,15 @@ export default function AppointmentPage() {
                               </div>
 
                               <p className="text-sm font-semibold text-slate-900">
-                                ₹{service.price * service.qty}
+                                ₹
+                                {Number(service.price || 0) *
+                                  (service.qty || 1)}
                               </p>
                             </div>
                           ))}
                         </div>
 
-                        {/* Appointment information */}
+                        {/* APPOINTMENT INFORMATION */}
                         <div className="mt-7 grid grid-cols-1 gap-5 border-t border-black/5 pt-7 sm:grid-cols-2">
                           <div>
                             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -383,14 +584,21 @@ export default function AppointmentPage() {
                             </p>
 
                             <p className="mt-1.5 text-sm font-semibold text-slate-900">
-                              ₹{total}
+                              ₹
+                              {selectedServices.reduce(
+                                (sum, service) =>
+                                  sum +
+                                  Number(service.price || 0) *
+                                    (service.qty || 1),
+                                0
+                              )}
                             </p>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Actions */}
+                    {/* ACTIONS */}
                     <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
                       <button
                         type="button"
@@ -409,7 +617,7 @@ export default function AppointmentPage() {
                       </Link>
                     </div>
 
-                    {/* Help */}
+                    {/* HELP */}
                     <div className="mt-8 flex items-center justify-center gap-2 text-sm text-slate-500">
                       <span>Need help with your booking?</span>
 
@@ -426,19 +634,32 @@ export default function AppointmentPage() {
             </section>
 
             {/* RIGHT SIDE — BOOKING SUMMARY */}
-            {step !== 4 && (
+            {(step === 1 || step === 2) && (
               <BookingSummary
                 selectedServices={selectedServices}
                 onRemove={handleRemoveService}
                 selectedDate={selectedDate}
                 selectedTime={selectedTime}
                 onContinue={handleContinue}
-                canContinue={canContinue}
-                continueLabel={continueLabel}
+                canContinue={canContinue && !isHolding}
+                continueLabel={
+                  isHolding ? "Reserving your spot..." : continueLabel
+                }
               />
             )}
           </div>
         </div>
+
+        {/* CUSTOMER AUTH MODAL */}
+        {isAuthModalOpen && (
+          <CustomerAuthModal
+            expiresAt={holdExpiresAt}
+            onClose={() => {
+              setIsAuthModalOpen(false);
+            }}
+            onComplete={handleAuthComplete}
+          />
+        )}
       </main>
     </div>
   );
