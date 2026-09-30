@@ -16,11 +16,17 @@ export async function POST(request) {
       );
     }
 
-    const { holdId, phone, name, email } = body;
+    const {business_id: businessId, holdId, phone, name, email } = body;
 
     // --------------------------------------------------
     // PART 2 — Validate base required fields
     // --------------------------------------------------
+    if (!businessId) {
+      return NextResponse.json(
+        { success: false, message: "Business ID is required." },
+        { status: 400 }
+      );
+    }
     if (!holdId) {
       return NextResponse.json(
         { success: false, message: "Hold ID is required." },
@@ -64,8 +70,9 @@ export async function POST(request) {
     // --------------------------------------------------
     const { data: hold, error: holdError } = await supabase
       .from("booking_holds")
-      .select("id, customer_id, expires_at, status")
+      .select("id, business_id, customer_id, expires_at, status")
       .eq("id", holdId)
+      .eq("business_id", businessId)
       .maybeSingle();
 
     if (holdError) {
@@ -108,6 +115,7 @@ export async function POST(request) {
         .from("customers")
         .select("id, name, phone, email")
         .eq("phone", normalizedPhone)
+        .eq("business_id", businessId)
         .maybeSingle();
 
     if (customerLookupError) {
@@ -140,6 +148,7 @@ export async function POST(request) {
     .from("customers")
     .upsert(
       {
+        business_id: businessId,
         phone: normalizedPhone,
         name: name.trim(),
         email:
@@ -148,7 +157,7 @@ export async function POST(request) {
             : null,
       },
       {
-        onConflict: "phone",
+        onConflict: "business_id,phone",
       }
     )
     .select("id, name, phone, email")
@@ -176,6 +185,7 @@ customer = newCustomer;
       .update({ customer_id: customer.id })
       .eq("id", holdId)
       .eq("status", "active")
+      .eq("business_id", businessId)
       .select("id, customer_id, expires_at, status")
       .single();
 

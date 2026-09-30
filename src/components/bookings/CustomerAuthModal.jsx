@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Clock3, ShieldCheck, ArrowLeft, X } from "lucide-react";
-
+import { BUSINESS_ID } from "@/lib/business";
 const DEV_OTP = "123456";
 
 export default function CustomerAuthModal({
@@ -138,6 +138,7 @@ const [isCheckingCustomer, setIsCheckingCustomer] = useState(false);
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          business_id: BUSINESS_ID,
           phone: `+91${phone}`,
         }),
       });
@@ -361,9 +362,7 @@ const [isCheckingCustomer, setIsCheckingCustomer] = useState(false);
                 </p>
               )}
 
-              <p className="mt-3 text-center text-xs text-gray-400">
-                Development OTP: 123456
-              </p>
+             
 
               <button
                 type="submit"

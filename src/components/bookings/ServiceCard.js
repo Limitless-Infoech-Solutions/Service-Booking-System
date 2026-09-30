@@ -20,7 +20,7 @@ import {
   CircleEllipsis,
 } from "lucide-react";
 
-import { categoryMeta, badgeMeta } from "@/data/serviceData";
+import { categoryMeta, badgeMeta } from "@/data/serviceMeta";
 
 // Maps the icon name stored in serviceData.js to an actual lucide component.
 const ICONS = {

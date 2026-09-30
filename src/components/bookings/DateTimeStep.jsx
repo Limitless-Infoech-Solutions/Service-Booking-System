@@ -7,9 +7,9 @@ import {
   ChevronRight,
   Clock,
 } from "lucide-react";
-
+import { BUSINESS_ID } from "@/lib/business";
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-
+const ONLINE_BOOKING_CUTOFF_HOURS = 5;
 function startOfDay(date) {
   const copy = new Date(date);
   copy.setHours(0, 0, 0, 0);
@@ -103,7 +103,7 @@ export default function DateTimeStep({
   //   allocationType: "single_staff"
   // }
   const [slots, setSlots] = useState([]);
-
+  const [businessHours, setBusinessHours] = useState(null);
   const [loadingSlots, setLoadingSlots] =
     useState(false);
 
@@ -186,10 +186,21 @@ export default function DateTimeStep({
 
       try {
         const response = await fetch(
-          `/api/services/availability?date=${dateString}&services=${serviceIds.join(",")}`
+          `/api/services/availability?business_id=${BUSINESS_ID}&date=${dateString}&services=${serviceIds.join(",")}`
         );
 
         const data = await response.json();
+        console.log("FULL AVAILABILITY RESPONSE:", data);
+        const returnedBusinessHours = data?.businessHours;
+
+setBusinessHours(returnedBusinessHours || null);
+
+
+        console.log("Availability response:", {
+          status: response.status,
+          ok: response.ok,
+          data,
+        });
 
         if (!response.ok) {
           throw new Error(
@@ -197,11 +208,16 @@ export default function DateTimeStep({
               "Unable to load available times."
           );
         }
+        
 
-        const apiSlots = data.slots || [];
-
+        const apiSlots = (data?.availableSlots || []).map((slot) => ({
+          ...slot,
+          status: "available",
+        }));
+        
         setSlots(apiSlots);
-
+        
+       
         // Only AVAILABLE slots can remain selected.
         const selectedSlotStillAvailable =
           apiSlots.some(
@@ -239,6 +255,30 @@ export default function DateTimeStep({
     selectedTime,
     onSelectTime,
   ]);
+  // if the user is selecting time before 5 hrs then 
+  const isOnlineBookingCutoff = useMemo(() => {
+    if (!selectedDate || !isSameDay(selectedDate, today)) {
+      return false;
+    }
+  
+    if (!businessHours?.isOpen || !businessHours?.closeTime) {
+      return false;
+    }
+  
+    const [hours, minutes] = businessHours.closeTime
+      .split(":")
+      .map(Number);
+  
+    const closingDateTime = new Date();
+    closingDateTime.setHours(hours, minutes, 0, 0);
+  
+    const cutoffTime =
+      closingDateTime.getTime() -
+      ONLINE_BOOKING_CUTOFF_HOURS * 60 * 60 * 1000;
+  
+    // eslint-disable-next-line react-hooks/purity
+    return Date.now() >= cutoffTime;
+  }, [selectedDate, today, businessHours]);
 
   // -----------------------------------------
   // Group API slots into Morning / Afternoon /
@@ -442,9 +482,22 @@ export default function DateTimeStep({
                 {availabilityError}
               </p>
             </div>
+            ) : isOnlineBookingCutoff ? (
+              <div className="mt-5 rounded-xl border border-dashed border-black/10 px-4 py-8 text-center sm:py-10">
+                <p className="text-sm font-medium text-slate-600">
+                  <b>Online booking is not available right now.</b>
+                  <br />
+                  Please book at least 5 hours in advance.
+                </p>
+            
+                <p className="mt-1 text-xs text-slate-400">
+                  Please choose another date.
+                </p>
+              </div>
           ) : timeSections.length === 0 ? (
             <div className="mt-5 rounded-xl border border-dashed border-black/10 px-4 py-8 text-center sm:py-10">
               <p className="text-sm font-medium text-slate-600">
+                <b>It&apos;s a Weekend!</b> <br />
                 No time slots available
               </p>
 

@@ -43,7 +43,17 @@ export async function POST(request) {
       );
     }
 
+    const businessId = body?.business_id;
     const normalizedPhone = normalizeIndianPhone(body?.phone);
+    if (!businessId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Business ID is required.",
+        },
+        { status: 400 }
+      );
+    }
 
     if (!normalizedPhone) {
       return NextResponse.json(
@@ -60,6 +70,7 @@ export async function POST(request) {
       .from("customers")
       .select("id, name, phone, email")
       .eq("phone", normalizedPhone)
+      .eq("business_id", businessId)
       .maybeSingle();
 
     if (error) {

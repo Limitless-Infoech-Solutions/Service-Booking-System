@@ -1,12 +1,13 @@
 "use client";
 
 import { ArrowRight, CalendarDays, Clock3 } from "lucide-react";
-
+import { useState } from "react";
 export default function BookingReviewStep({
   customer,
   selectedServices,
   selectedDate,
   selectedTime,
+  holdId,
   onContinue,
 }) {
   const total = selectedServices.reduce(
@@ -33,6 +34,39 @@ export default function BookingReviewStep({
 
     return `${hours} hr ${remainingMinutes} min`;
   };
+  const [isConfirming, setIsConfirming] = useState(false);
+const [appointmentId, setAppointmentId] = useState(null);
+const [error, setError] = useState("");
+
+const handleConfirmBooking = async () => {
+  try {
+    setIsConfirming(true);
+    setError("");
+
+    const response = await fetch("/api/appointments/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        hold_id: holdId,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to confirm booking");
+    }
+
+    setAppointmentId(data.appointment_id);
+  } catch (error) {
+    console.error("Confirm booking error:", error);
+    setError(error.message || "Something went wrong");
+  } finally {
+    setIsConfirming(false);
+  }
+};
 
   const formattedDate = selectedDate
     ? new Date(selectedDate).toLocaleDateString("en-IN", {
@@ -155,15 +189,15 @@ export default function BookingReviewStep({
           </div>
         </div>
 
-        {/* Continue */}
-        <button
-          type="button"
-          onClick={onContinue}
-          className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f6c945] hover:text-slate-900"
-        >
-          Continue to Payment
-          <ArrowRight size={17} />
-        </button>
+    {/* Confirm Appointment */}
+<button
+  type="button"
+  onClick={onContinue}
+  className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f6c945] hover:text-slate-900"
+>
+  Confirm Appointment
+  <ArrowRight size={17} />
+</button>
       </div>
     </div>
   );
