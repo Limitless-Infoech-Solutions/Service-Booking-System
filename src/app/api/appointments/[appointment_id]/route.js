@@ -28,7 +28,8 @@ export async function GET(request, { params }) {
           staff_id,
           services (
             id,
-            name
+            name,
+            image
           )
         ),
        customers!appointments_customer_id_fkey (

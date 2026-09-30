@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, Check, CalendarDays, ArrowRight } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
-
+import Image from "next/image";
 import { BUSINESS_ID } from "@/lib/business";
 
 import ServiceSelectionStep from "@/components/bookings/ServiceSelectionStep";
@@ -887,15 +887,20 @@ export default function AppointmentPage() {
                                   {/* SERVICE IMAGE */}
 
                                   <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                                    {/* 
-                                          Service image is not currently
-                                          returned by the appointment API.
-                                          
-                                          We can add it later by including
-                                          the service image field in the
-                                          appointment API response.
-                                        */}
-                                  </div>
+  {item?.services?.image ? (
+    <Image
+      src={item.services.image}
+      alt={item.services?.name || "Service"}
+      width={80}
+      height={80}
+      className="h-full w-full object-cover"
+    />
+  ) : (
+    <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+      No image
+    </div>
+  )}
+</div>
 
                                   {/* SERVICE INFORMATION */}
 

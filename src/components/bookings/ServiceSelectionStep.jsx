@@ -37,8 +37,9 @@ export default function ServiceSelectionStep({
       </div>
 
       {/* Filters */}
-      <div className="mt-7 overflow-x-auto pb-1">
-        <div className="flex min-w-max gap-2">
+      <div className="mt-7 -mx-1 overflow-x-auto px-1 pb-3"> 
+        <div className="flex w-max gap-2">
+
           {categories.map((category) => {
             const active = activeCategory === category;
 
@@ -88,7 +89,7 @@ export default function ServiceSelectionStep({
       </div>
 
       {/* Services */}
-      <div className="mt-5">
+      <div className="mt-7">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {filteredServices.map((service) => (
             <ServiceCard
