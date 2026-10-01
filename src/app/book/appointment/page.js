@@ -37,7 +37,7 @@ export default function AppointmentPage() {
   // ==================================================
 
   const [services, setServices] = useState([]);
-
+  const [isLoadingServices, setIsLoadingServices] = useState(true);
   useEffect(() => {
     async function fetchServices() {
       try {
@@ -65,6 +65,9 @@ export default function AppointmentPage() {
       } catch (error) {
         console.error("Services API error:", error);
       }
+      finally {
+        setIsLoadingServices(false);
+      }
     }
 
     fetchServices();
@@ -83,7 +86,7 @@ export default function AppointmentPage() {
   const [selectedServices, setSelectedServices] = useState([]);
 
   const [activeCategory, setActiveCategory] = useState("All");
-
+  
   const [searchQuery, setSearchQuery] = useState("");
 
   // ==================================================
@@ -718,6 +721,7 @@ export default function AppointmentPage() {
                   onSearchChange={setSearchQuery}
                   filteredServices={filteredServices}
                   selectedServices={selectedServices}
+                  isLoadingServices={isLoadingServices}
                   onSelectService={handleSelectService}
                 />
               )}

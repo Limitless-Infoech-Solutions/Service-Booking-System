@@ -13,6 +13,7 @@ export default function ServiceSelectionStep({
   filteredServices,
   selectedServices,
   onSelectService,
+  isLoadingServices,
 }) {
   return (
     <>
@@ -101,16 +102,27 @@ export default function ServiceSelectionStep({
           ))}
         </div>
 
-        {filteredServices.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-black/10 bg-white px-6 py-14 text-center">
-            <p className="text-sm font-medium text-slate-700">
-              No services found
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Try another category or search term.
-            </p>
-          </div>
-        )}
+        {isLoadingServices ? (
+  <div className="rounded-2xl border border-dashed border-black/10 bg-white px-6 py-14 text-center">
+    <p className="text-sm font-medium text-slate-700">
+      Loading services...
+    </p>
+
+    <p className="mt-1 text-xs text-slate-400">
+      Please wait a moment.
+    </p>
+  </div>
+) : filteredServices.length === 0 ? (
+  <div className="rounded-2xl border border-dashed border-black/10 bg-white px-6 py-14 text-center">
+    <p className="text-sm font-medium text-slate-700">
+      No services found
+    </p>
+
+    <p className="mt-1 text-xs text-slate-400">
+      Try another category or search term.
+    </p>
+  </div>
+) : null}
       </div>
     </>
   );
