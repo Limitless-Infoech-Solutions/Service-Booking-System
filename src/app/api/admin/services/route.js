@@ -142,3 +142,118 @@ export async function POST(request) {
       );
     }
   }
+  export async function PUT(request) {
+    try {
+      const body = await request.json();
+  
+      const {
+        id,
+        business_id,
+        name,
+        description,
+        price,
+        duration_minutes,
+        buffer_minutes,
+        category,
+        badge,
+        image,
+        is_active,
+      } = body;
+  
+      if (!id || !business_id) {
+        return NextResponse.json(
+          {
+            error: "id and business_id are required",
+          },
+          { status: 400 }
+        );
+      }
+  
+      const { data, error } = await supabase
+        .from("services")
+        .update({
+          name,
+          description: description || null,
+          price,
+          duration_minutes,
+          buffer_minutes: buffer_minutes ?? 0,
+          category: category || "Others",
+          badge: badge || null,
+          image: image || null,
+          is_active: is_active ?? true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("business_id", business_id)
+        .select()
+        .single();
+  
+      if (error) {
+        console.error("Update service API error:", error);
+  
+        return NextResponse.json(
+          { error: error.message },
+          { status: 500 }
+        );
+      }
+  
+      return NextResponse.json({
+        service: data,
+      });
+    } catch (error) {
+      console.error("Unexpected error:", error);
+  
+      return NextResponse.json(
+        { error: "Something went wrong" },
+        { status: 500 }
+      );
+    }
+  }
+  export async function DELETE(request) {
+    try {
+      const body = await request.json();
+  
+      const { id, business_id } = body;
+  
+      if (!id || !business_id) {
+        return NextResponse.json(
+          {
+            error: "id and business_id are required",
+          },
+          { status: 400 }
+        );
+      }
+  
+      const { data, error } = await supabase
+        .from("services")
+        .update({
+          is_active: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("business_id", business_id)
+        .select()
+        .single();
+  
+      if (error) {
+        console.error("Deactivate service API error:", error);
+  
+        return NextResponse.json(
+          { error: error.message },
+          { status: 500 }
+        );
+      }
+  
+      return NextResponse.json({
+        message: "Service deactivated successfully",
+        service: data,
+      });
+    } catch (error) {
+      console.error("Unexpected error:", error);
+  
+      return NextResponse.json(
+        { error: "Something went wrong" },
+        { status: 500 }
+      );
+    }
+  }

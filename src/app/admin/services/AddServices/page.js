@@ -57,6 +57,9 @@ export default function AddServicePage() {
           is_active: form.is_active,
         }),
       });
+     
+
+
 
       const data = await response.json();
 
@@ -64,7 +67,7 @@ export default function AddServicePage() {
         throw new Error(data.error || "Failed to create service");
       }
 
-      router.push("api/admin/services");
+      router.push("/admin/services");
     } catch (error) {
       console.error("Create service error:", error);
       setError(error.message);
