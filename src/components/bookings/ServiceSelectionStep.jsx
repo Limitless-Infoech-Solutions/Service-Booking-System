@@ -12,7 +12,7 @@ export default function ServiceSelectionStep({
   onSearchChange,
   filteredServices,
   selectedServices,
-  onSelectService,
+  onSelectService, 
   isLoadingServices,
 }) {
   return (
