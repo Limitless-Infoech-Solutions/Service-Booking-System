@@ -119,7 +119,7 @@ export default function ServiceSelectionStep({
     </p>
 
     <p className="mt-1 text-xs text-slate-400">
-      Try another category or search term.
+      Try another category or search term.  
     </p>
   </div>
 ) : null}

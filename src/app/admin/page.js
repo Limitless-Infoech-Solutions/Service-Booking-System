@@ -9,19 +9,25 @@ import {
   CalendarClock,
   ChevronLeft,
   ChevronRight,
-  RefreshCw,
   ArrowUpRight,
+  Plus,
+  UserPlus,
+  CalendarRange,
+  Search,
   Phone,
   IndianRupee,
   CalendarCheck,
   AlertCircle,
+  UserCheck,
+  UserRound,
+  Activity,
 } from "lucide-react";
 
 const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
 
 const TIME_ZONE = "Asia/Kolkata";
 
-// Returns today's date in India as YYYY-MM-DD.
+// Get today's date in India.
 function getTodayInIndia() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: TIME_ZONE,
@@ -37,7 +43,7 @@ function getTodayInIndia() {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-// Adds calendar days without relying on the browser's local timezone.
+// Add calendar days without depending on the browser's timezone.
 function addDays(dateString, amount) {
   const date = new Date(`${dateString}T12:00:00Z`);
 
@@ -46,7 +52,6 @@ function addDays(dateString, amount) {
   return date.toISOString().slice(0, 10);
 }
 
-// Formats appointment timestamps in India time.
 function formatTime(dateString) {
   if (!dateString) return "—";
 
@@ -73,6 +78,20 @@ function formatDate(dateString) {
     day: "numeric",
     month: "long",
     year: "numeric",
+  }).format(date);
+}
+
+function formatShortDate(dateString) {
+  if (!dateString) return "—";
+
+  const date = new Date(dateString);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: TIME_ZONE,
+    day: "numeric",
+    month: "short",
   }).format(date);
 }
 
@@ -112,6 +131,10 @@ function getStatusStyle(status) {
     return "bg-red-50 text-red-700";
   }
 
+  if (normalizedStatus === "no_show") {
+    return "bg-slate-100 text-slate-600";
+  }
+
   return "bg-slate-100 text-slate-600";
 }
 
@@ -134,8 +157,10 @@ function StatCard({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-slate-500">{title}</p>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-500">
+            {title}
+          </p>
 
           <p className="mt-3 text-3xl font-semibold tracking-tight text-[#0b0e14]">
             {loading ? (
@@ -153,8 +178,102 @@ function StatCard({
         </div>
       </div>
 
-      <p className="mt-3 text-xs text-slate-500">{description}</p>
+      <p className="mt-3 text-xs leading-5 text-slate-500">
+        {description}
+      </p>
     </div>
+  );
+}
+
+function SectionHeading({
+  title,
+  description,
+  icon: Icon,
+}) {
+  return (
+    <div className="mb-5 flex items-center gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#1e9be0]">
+        <Icon size={20} />
+      </div>
+
+      <div>
+        <h2 className="font-semibold text-slate-900">
+          {title}
+        </h2>
+
+        {description && (
+          <p className="mt-1 text-sm text-slate-500">
+            {description}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AppointmentRow({ appointment, showDate = false }) {
+  return (
+    <Link
+      href={`/admin/appointments/${appointment.id}`}
+      className="group block px-5 py-4 transition hover:bg-slate-50"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex shrink-0 items-start gap-3 sm:w-28 sm:flex-col sm:gap-1">
+          {showDate && (
+            <p className="text-xs font-medium text-slate-500">
+              {formatShortDate(appointment.start_time)}
+            </p>
+          )}
+
+          <div className="flex items-center gap-1.5 text-sm font-semibold text-[#1e9be0]">
+            <Clock3 size={15} />
+
+            {formatTime(appointment.start_time)}
+          </div>
+
+          <p className="pl-5 text-xs text-slate-400 sm:pl-0">
+            to {formatTime(appointment.end_time)}
+          </p>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-semibold text-slate-900 transition group-hover:text-[#1e9be0]">
+              {getCustomerName(appointment)}
+            </h3>
+
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${getStatusStyle(
+                appointment.status
+              )}`}
+            >
+              {String(appointment.status || "unknown").replaceAll(
+                "_",
+                " "
+              )}
+            </span>
+          </div>
+
+          {getCustomerPhone(appointment) && (
+            <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+              <Phone size={14} />
+
+              {getCustomerPhone(appointment)}
+            </p>
+          )}
+
+          <p className="mt-1 text-xs text-slate-400">
+            Appointment #{appointment.id.slice(0, 8)}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1 text-sm font-semibold text-slate-800">
+          <IndianRupee size={15} />
+
+          {formatCurrency(appointment.total_amount)}
+        </div>
+      </div>
+    </Link>
   );
 }
 
@@ -162,15 +281,12 @@ export default function AdminDashboard() {
   const [today, setToday] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
 
-  const [todayAppointments, setTodayAppointments] = useState([]);
-  const [selectedAppointments, setSelectedAppointments] = useState([]);
-  const [upcomingAppointments, setUpcomingAppointments] = useState([]);
+  const [dashboardData, setDashboardData] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
 
-  // Initialize dates in the business timezone.
+  // Initialize dates in India Standard Time.
   useEffect(() => {
     const currentDate = getTodayInIndia();
 
@@ -179,10 +295,16 @@ export default function AdminDashboard() {
     setSelectedDate(currentDate);
   }, []);
 
-  const fetchAppointments = useCallback(
-    async (date) => {
+  // Fetch the dashboard's actual API response.
+  const loadDashboard = useCallback(async (date) => {
+    if (!date) return;
+
+    try {
+      setLoading(true);
+      setError("");
+
       const response = await fetch(
-        `/api/admin/appointments?business_id=${BUSINESS_ID}&date=${date}`,
+        `/api/admin/dashboard?business_id=${BUSINESS_ID}&date=${date}`,
         {
           cache: "no-store",
         }
@@ -191,90 +313,22 @@ export default function AdminDashboard() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to load appointments.");
+        throw new Error(
+          data.error || "Failed to load dashboard."
+        );
       }
 
-      return data.appointments || [];
-    },
-    []
-  );
+      setDashboardData(data);
+    } catch (err) {
+      console.error("Dashboard loading error:", err);
 
-  const loadDashboard = useCallback(
-    async (date, isRefresh = false) => {
-      if (!date) return;
-
-      try {
-        if (isRefresh) {
-          setRefreshing(true);
-        } else {
-          setLoading(true);
-        }
-
-        setError("");
-
-        // Fetch the selected day's schedule and today's appointments.
-        const datesToFetch = new Set([date, getTodayInIndia()]);
-
-        // Also fetch the next seven days for the upcoming appointments card.
-        const currentIndiaDate = getTodayInIndia();
-
-        for (let day = 1; day <= 7; day += 1) {
-          datesToFetch.add(addDays(currentIndiaDate, day));
-        }
-
-        const dates = Array.from(datesToFetch);
-
-        const results = await Promise.all(
-          dates.map(async (requestedDate) => ({
-            date: requestedDate,
-            appointments: await fetchAppointments(requestedDate),
-          }))
-        );
-
-        const appointmentsByDate = Object.fromEntries(
-          results.map((result) => [
-            result.date,
-            result.appointments,
-          ])
-        );
-
-        setTodayAppointments(
-          appointmentsByDate[currentIndiaDate] || []
-        );
-
-        setSelectedAppointments(
-          appointmentsByDate[date] || []
-        );
-
-        const futureAppointments = [];
-
-        for (let day = 1; day <= 7; day += 1) {
-          const futureDate = addDays(currentIndiaDate, day);
-
-          const appointments =
-            appointmentsByDate[futureDate] || [];
-
-          futureAppointments.push(...appointments);
-        }
-
-        setUpcomingAppointments(
-          futureAppointments.sort(
-            (a, b) =>
-              new Date(a.start_time) - new Date(b.start_time)
-          )
-        );
-      } catch (err) {
-        console.error("Dashboard loading error:", err);
-        setError(
-          err.message || "Unable to load dashboard information."
-        );
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [fetchAppointments]
-  );
+      setError(
+        err.message || "Unable to load dashboard information."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedDate) return;
@@ -283,28 +337,68 @@ export default function AdminDashboard() {
     loadDashboard(selectedDate);
   }, [selectedDate, loadDashboard]);
 
-  // Unique customers with appointments on the selected day.
+  // Values returned by the dashboard API.
+  const metrics = dashboardData?.metrics || {};
+
+  const selectedAppointments =
+    dashboardData?.schedule?.appointments || [];
+
+  const upcomingAppointments =
+    dashboardData?.upcoming?.appointments || [];
+
+  const recentAppointments =
+    dashboardData?.recentAppointments || [];
+
+  const availableStaff =
+    dashboardData?.staff?.availableNow || [];
+
+  const activeStaffCount =
+    metrics.activeStaff ??
+    dashboardData?.staff?.activeCount ??
+    0;
+
+  const availableStaffCount =
+    metrics.availableStaffNow ??
+    dashboardData?.staff?.availableCount ??
+    availableStaff.length;
+
+  // Count unique customers on the selected date.
   const selectedDayCustomerCount = new Set(
     selectedAppointments
       .map((appointment) => appointment.customer_id)
       .filter(Boolean)
   ).size;
 
-  // Unique customers with appointments today.
-  const todayCustomerCount = new Set(
-    todayAppointments
-      .map((appointment) => appointment.customer_id)
-      .filter(Boolean)
-  ).size;
+  // Scheduled value for the selected date.
+  const scheduledValueSelectedDate =
+    selectedAppointments.reduce((sum, appointment) => {
+      const status = String(
+        appointment.status || ""
+      ).toLowerCase();
 
-  // Only future appointments that have not been cancelled.
-  const activeUpcomingAppointments = upcomingAppointments.filter(
-    (appointment) => {
-      const status = String(appointment.status || "").toLowerCase();
+      if (
+        status === "cancelled" ||
+        status === "canceled"
+      ) {
+        return sum;
+      }
 
-      return status !== "cancelled" && status !== "canceled";
-    }
-  );
+      const amount = Number(appointment.total_amount);
+
+      return sum + (Number.isFinite(amount) ? amount : 0);
+    }, 0);
+
+  const activeUpcomingAppointments =
+    upcomingAppointments.filter((appointment) => {
+      const status = String(
+        appointment.status || ""
+      ).toLowerCase();
+
+      return (
+        status !== "cancelled" &&
+        status !== "canceled"
+      );
+    });
 
   function changeDate(days) {
     setSelectedDate((currentDate) => {
@@ -314,20 +408,15 @@ export default function AdminDashboard() {
     });
   }
 
-  async function handleRefresh() {
-    if (!selectedDate) return;
-
-    await loadDashboard(selectedDate, true);
-  }
-
   return (
     <main className="min-h-screen bg-[#f5f7fa] px-4 py-6 text-[#0b0e14] sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+
+        {/* HEADER */}
+        <header className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
           <div>
             <p className="mb-2 text-sm font-medium text-[#1e9be0]">
-              BUSINESS OVERVIEW
+              BUSINESS MANAGEMENT
             </p>
 
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
@@ -335,43 +424,32 @@ export default function AdminDashboard() {
             </h1>
 
             <p className="mt-2 text-sm text-slate-500">
-              Monitor your appointments and daily activity.
+              Monitor appointments, customers, staff, and business activity.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={loading || refreshing || !selectedDate}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RefreshCw
-                size={16}
-                className={refreshing ? "animate-spin" : ""}
-              />
-              Refresh
-            </button>
+          <Link
+            href="/admin/appointments"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0b0e14] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+          >
+            All appointments
 
-            <Link
-              href="/admin/appointments"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0b0e14] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
-            >
-              All appointments
-              <ArrowUpRight size={16} />
-            </Link>
-          </div>
-        </div>
+            <ArrowUpRight size={16} />
+          </Link>
+        </header>
 
-        {/* Error message */}
+        {/* ERROR */}
         {error && (
           <div
             role="alert"
             className="mb-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
           >
-            <AlertCircle size={19} className="mt-0.5 shrink-0" />
+            <AlertCircle
+              size={19}
+              className="mt-0.5 shrink-0"
+            />
 
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <p className="font-semibold">
                 Unable to load dashboard data
               </p>
@@ -381,7 +459,7 @@ export default function AdminDashboard() {
 
             <button
               type="button"
-              onClick={handleRefresh}
+              onClick={() => loadDashboard(selectedDate)}
               className="shrink-0 font-semibold underline"
             >
               Retry
@@ -389,7 +467,220 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Date selection */}
+        {/* QUICK ACTIONS */}
+        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4">
+            <h2 className="font-semibold">
+              Quick actions
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Quickly access common tasks.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Link
+              href="/admin/appointments/new?type=walk-in"
+              className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#1e9be0] hover:bg-blue-50/50"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[#1e9be0]">
+                <UserPlus size={19} />
+              </span>
+
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">
+                  Add Walk-in
+                </span>
+
+                <span className="mt-1 block text-xs text-slate-500">
+                  Register an in-person booking
+                </span>
+              </span>
+
+              <ArrowUpRight
+                size={16}
+                className="text-slate-400 group-hover:text-[#1e9be0]"
+              />
+            </Link>
+
+            <Link
+              href="/admin/appointments/new"
+              className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#1e9be0] hover:bg-blue-50/50"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+                <Plus size={19} />
+              </span>
+
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">
+                  New Appointment
+                </span>
+
+                <span className="mt-1 block text-xs text-slate-500">
+                  Create a new booking
+                </span>
+              </span>
+
+              <ArrowUpRight
+                size={16}
+                className="text-slate-400 group-hover:text-[#1e9be0]"
+              />
+            </Link>
+
+            <Link
+              href="/admin/calendar"
+              className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#1e9be0] hover:bg-blue-50/50"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700">
+                <CalendarRange size={19} />
+              </span>
+
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">
+                  View Calendar
+                </span>
+
+                <span className="mt-1 block text-xs text-slate-500">
+                  Browse the booking calendar
+                </span>
+              </span>
+
+              <ArrowUpRight
+                size={16}
+                className="text-slate-400 group-hover:text-[#1e9be0]"
+              />
+            </Link>
+
+            <Link
+              href="/admin/customers"
+              className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#1e9be0] hover:bg-blue-50/50"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                <Search size={19} />
+              </span>
+
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">
+                  Find Customer
+                </span>
+
+                <span className="mt-1 block text-xs text-slate-500">
+                  Search customer records
+                </span>
+              </span>
+
+              <ArrowUpRight
+                size={16}
+                className="text-slate-400 group-hover:text-[#1e9be0]"
+              />
+            </Link>
+          </div>
+        </section>
+
+        {/* BUSINESS OVERVIEW */}
+        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1e9be0]">
+              At a glance
+            </p>
+
+            <h2 className="mt-1 text-lg font-semibold">
+              Business overview
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Today&apos;s key business metrics.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+            {/* Today's appointments */}
+            <div className="rounded-xl bg-slate-50 p-4">
+              <div className="flex items-center gap-2 text-slate-500">
+                <CalendarCheck size={17} />
+
+                <span className="text-xs font-medium sm:text-sm">
+                  Today&apos;s Appointments
+                </span>
+              </div>
+
+              <p className="mt-3 text-2xl font-semibold">
+                {loading
+                  ? "—"
+                  : metrics.todayAppointments ?? 0}
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Appointments scheduled today
+              </p>
+            </div>
+
+            {/* Pending actions placeholder */}
+            <div className="rounded-xl bg-slate-50 p-4">
+              <div className="flex items-center gap-2 text-slate-500">
+                <AlertCircle size={17} />
+
+                <span className="text-xs font-medium sm:text-sm">
+                  Pending Actions
+                </span>
+              </div>
+
+              <p className="mt-3 text-2xl font-semibold">
+                —
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Action rules not connected yet
+              </p>
+            </div>
+
+            {/* Scheduled value */}
+            <div className="rounded-xl bg-slate-50 p-4">
+              <div className="flex items-center gap-2 text-slate-500">
+                <IndianRupee size={17} />
+
+                <span className="text-xs font-medium sm:text-sm">
+                  Scheduled Value Today
+                </span>
+              </div>
+
+              <p className="mt-3 text-xl font-semibold sm:text-2xl">
+                {loading
+                  ? "—"
+                  : formatCurrency(
+                      metrics.scheduledValueToday ?? 0
+                    )}
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Excludes cancelled bookings
+              </p>
+            </div>
+
+            {/* Available staff */}
+            <div className="rounded-xl bg-slate-50 p-4">
+              <div className="flex items-center gap-2 text-slate-500">
+                <UserCheck size={17} />
+
+                <span className="text-xs font-medium sm:text-sm">
+                  Staff Available Now
+                </span>
+              </div>
+
+              <p className="mt-3 text-2xl font-semibold">
+                {loading ? "—" : availableStaffCount}
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Out of {loading ? "—" : activeStaffCount} active staff
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* DATE SELECTOR */}
         <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div>
@@ -399,13 +690,15 @@ export default function AdminDashboard() {
                   className="text-[#1e9be0]"
                 />
 
-                <h2 className="font-semibold">Daily schedule</h2>
+                <h2 className="font-semibold">
+                  Daily schedule
+                </h2>
               </div>
 
               <p className="mt-1 text-sm text-slate-500">
                 {selectedDate
                   ? formatDate(selectedDate)
-                  : "Preparing your schedule..."}
+                  : "Preparing schedule..."}
               </p>
             </div>
 
@@ -452,11 +745,11 @@ export default function AdminDashboard() {
           </div>
         </section>
 
-        {/* Dashboard cards */}
+        {/* FOUR KPI CARDS */}
         <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             title="Today's Appointments"
-            value={todayAppointments.length}
+            value={metrics.todayAppointments ?? 0}
             description="Appointments starting today"
             icon={CalendarCheck}
             iconClass="bg-blue-50 text-blue-600"
@@ -465,7 +758,7 @@ export default function AdminDashboard() {
 
           <StatCard
             title="Today's Customers"
-            value={todayCustomerCount}
+            value={metrics.todayCustomers ?? 0}
             description="Unique customers with appointments today"
             icon={Users}
             iconClass="bg-violet-50 text-violet-600"
@@ -474,7 +767,7 @@ export default function AdminDashboard() {
 
           <StatCard
             title="Selected-Day Appointments"
-            value={selectedAppointments.length}
+            value={dashboardData?.schedule?.total ?? selectedAppointments.length}
             description="Appointments on the selected date"
             icon={CalendarDays}
             iconClass="bg-cyan-50 text-cyan-700"
@@ -483,21 +776,24 @@ export default function AdminDashboard() {
 
           <StatCard
             title="Upcoming Appointments"
-            value={activeUpcomingAppointments.length}
-            description="Next seven days, excluding cancellations"
+            value={metrics.upcomingAppointments ?? activeUpcomingAppointments.length}
+            description="Upcoming bookings returned by the dashboard API"
             icon={CalendarClock}
             iconClass="bg-amber-50 text-amber-600"
             loading={loading}
           />
         </section>
 
-        {/* Main content */}
-        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          {/* Selected date schedule */}
+        {/* MAIN CONTENT */}
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_350px]">
+
+          {/* APPOINTMENT SCHEDULE */}
           <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-5">
               <div>
-                <h2 className="font-semibold">Appointments schedule</h2>
+                <h2 className="font-semibold">
+                  Appointments schedule
+                </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
                   {selectedDate
@@ -506,8 +802,10 @@ export default function AdminDashboard() {
                 </p>
               </div>
 
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                {loading ? "Loading..." : `${selectedAppointments.length} total`}
+              <span className="shrink-0 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                {loading
+                  ? "Loading..."
+                  : `${dashboardData?.schedule?.total ?? selectedAppointments.length} total`}
               </span>
             </div>
 
@@ -547,64 +845,10 @@ export default function AdminDashboard() {
             ) : (
               <div className="divide-y divide-slate-100">
                 {selectedAppointments.map((appointment) => (
-                  <Link
+                  <AppointmentRow
                     key={appointment.id}
-                    href={`/admin/appointments/${appointment.id}`}
-                    className="group block px-5 py-5 transition hover:bg-slate-50"
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                      {/* Appointment time */}
-                      <div className="flex shrink-0 items-start gap-3 sm:w-28 sm:flex-col sm:gap-1">
-                        <div className="flex items-center gap-1.5 text-sm font-semibold text-[#1e9be0]">
-                          <Clock3 size={15} />
-
-                          {formatTime(appointment.start_time)}
-                        </div>
-
-                        <p className="pl-5 text-xs text-slate-400 sm:pl-0">
-                          to {formatTime(appointment.end_time)}
-                        </p>
-                      </div>
-
-                      {/* Customer and appointment details */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="font-semibold text-slate-900 transition group-hover:text-[#1e9be0]">
-                            {getCustomerName(appointment)}
-                          </h3>
-
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${getStatusStyle(
-                              appointment.status
-                            )}`}
-                          >
-                            {String(
-                              appointment.status || "unknown"
-                            ).replaceAll("_", " ")}
-                          </span>
-                        </div>
-
-                        {getCustomerPhone(appointment) && (
-                          <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
-                            <Phone size={14} />
-
-                            {getCustomerPhone(appointment)}
-                          </p>
-                        )}
-
-                        <p className="mt-2 text-xs text-slate-400">
-                          Appointment #{appointment.id.slice(0, 8)}
-                        </p>
-                      </div>
-
-                      {/* Amount */}
-                      <div className="flex shrink-0 items-center gap-1 text-sm font-semibold text-slate-800 sm:justify-end">
-                        <IndianRupee size={15} />
-
-                        {formatCurrency(appointment.total_amount)}
-                      </div>
-                    </div>
-                  </Link>
+                    appointment={appointment}
+                  />
                 ))}
               </div>
             )}
@@ -621,32 +865,28 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* Right sidebar */}
+          {/* RIGHT COLUMN */}
           <aside className="space-y-6">
-            {/* Selected date summary */}
+
+            {/* DAILY SUMMARY */}
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                  <Users size={18} />
-                </div>
+              <SectionHeading
+                title="Daily summary"
+                description="Selected date"
+                icon={Activity}
+              />
 
-                <div>
-                  <h2 className="font-semibold">Daily summary</h2>
-
-                  <p className="text-xs text-slate-500">
-                    Selected date
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 space-y-4">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm text-slate-500">
                     Appointments
                   </span>
 
                   <span className="font-semibold">
-                    {loading ? "—" : selectedAppointments.length}
+                    {loading
+                      ? "—"
+                      : dashboardData?.schedule?.total ??
+                        selectedAppointments.length}
                   </span>
                 </div>
 
@@ -661,8 +901,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-1 text-sm text-slate-500">
-                    <IndianRupee size={14} />
+                  <span className="text-sm text-slate-500">
                     Scheduled value
                   </span>
 
@@ -670,49 +909,127 @@ export default function AdminDashboard() {
                     {loading
                       ? "—"
                       : formatCurrency(
-                          selectedAppointments.reduce(
-                            (sum, appointment) => {
-                              const status = String(
-                                appointment.status || ""
-                              ).toLowerCase();
-
-                              if (
-                                status === "cancelled" ||
-                                status === "canceled"
-                              ) {
-                                return sum;
-                              }
-
-                              const amount = Number(
-                                appointment.total_amount
-                              );
-
-                              return (
-                                sum +
-                                (Number.isFinite(amount) ? amount : 0)
-                              );
-                            },
-                            0
-                          )
+                          scheduledValueSelectedDate
                         )}
                   </span>
                 </div>
               </div>
 
               <p className="mt-4 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-400">
-                Scheduled value excludes cancelled appointments. It is
-                not necessarily the amount collected.
+                Scheduled value excludes cancelled appointments.
+                It does not necessarily represent money collected.
               </p>
             </section>
 
-            {/* Upcoming appointments */}
+            {/* STAFF AVAILABILITY */}
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <SectionHeading
+                    title="Available staff"
+                    description="Current availability"
+                    icon={UserCheck}
+                  />
+
+                  <span className="shrink-0 rounded-full bg-green-50 px-3 py-1 text-sm font-semibold text-green-700">
+                    {loading ? "—" : availableStaffCount}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                  <span>Active staff</span>
+
+                  <span className="font-semibold text-slate-700">
+                    {loading ? "—" : activeStaffCount}
+                  </span>
+                </div>
+
+                {!loading && activeStaffCount > 0 && (
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-green-500 transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          (availableStaffCount / activeStaffCount) *
+                            100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {loading ? (
+                <div className="space-y-3 p-5">
+                  {[1, 2, 3].map((item) => (
+                    <div
+                      key={item}
+                      className="h-12 animate-pulse rounded-lg bg-slate-50"
+                    />
+                  ))}
+                </div>
+              ) : availableStaff.length === 0 ? (
+                <div className="px-5 py-8 text-center">
+                  <Users
+                    size={24}
+                    className="mx-auto text-slate-300"
+                  />
+
+                  <p className="mt-3 text-sm font-medium text-slate-700">
+                    No available staff
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    No staff members are currently reported as available.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {availableStaff.map((staffMember) => (
+                    <div
+                      key={staffMember.id}
+                      className="flex items-center gap-3 px-5 py-3"
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[#1e9be0]">
+                        <UserRound size={18} />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-800">
+                          {staffMember.name}
+                        </p>
+
+                        <p className="mt-1 flex items-center gap-1.5 text-xs text-green-600">
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                          Available
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="border-t border-slate-100 px-5 py-3">
+                <Link
+                  href="/admin/staff"
+                  className="text-sm font-semibold text-[#1e9be0] hover:text-blue-700"
+                >
+                  Manage staff →
+                </Link>
+              </div>
+            </section>
+
+            {/* UPCOMING APPOINTMENTS */}
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <div>
-                  <h2 className="font-semibold">Coming up</h2>
+                  <h2 className="font-semibold">
+                    Coming up
+                  </h2>
 
                   <p className="mt-1 text-xs text-slate-500">
-                    Next seven days
+                    Upcoming appointments
                   </p>
                 </div>
 
@@ -743,7 +1060,7 @@ export default function AdminDashboard() {
                   </p>
 
                   <p className="mt-1 text-xs text-slate-500">
-                    No appointments found in the next seven days.
+                    No upcoming appointments were returned.
                   </p>
                 </div>
               ) : (
@@ -751,41 +1068,11 @@ export default function AdminDashboard() {
                   {activeUpcomingAppointments
                     .slice(0, 5)
                     .map((appointment) => (
-                      <Link
+                      <AppointmentRow
                         key={appointment.id}
-                        href={`/admin/appointments/${appointment.id}`}
-                        className="block px-5 py-4 transition hover:bg-slate-50"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-800">
-                              {getCustomerName(appointment)}
-                            </p>
-
-                            <p className="mt-1 text-xs text-slate-500">
-                              {new Intl.DateTimeFormat("en-IN", {
-                                timeZone: TIME_ZONE,
-                                day: "numeric",
-                                month: "short",
-                              }).format(
-                                new Date(appointment.start_time)
-                              )}
-                              {" · "}
-                              {formatTime(appointment.start_time)}
-                            </p>
-                          </div>
-
-                          <span
-                            className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium capitalize ${getStatusStyle(
-                              appointment.status
-                            )}`}
-                          >
-                            {String(
-                              appointment.status || "unknown"
-                            ).replaceAll("_", " ")}
-                          </span>
-                        </div>
-                      </Link>
+                        appointment={appointment}
+                        showDate
+                      />
                     ))}
                 </div>
               )}
@@ -802,10 +1089,101 @@ export default function AdminDashboard() {
           </aside>
         </div>
 
-        {/* Footer note */}
+        {/* TOTAL CUSTOMERS */}
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                <Users size={21} />
+              </div>
+
+              <div>
+                <h2 className="font-semibold">
+                  Customer overview
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Total customers registered with your business.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-5 sm:justify-end">
+              <p className="text-3xl font-semibold">
+                {loading
+                  ? "—"
+                  : metrics.totalCustomers ?? 0}
+              </p>
+
+              <Link
+                href="/admin/customers"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium transition hover:bg-slate-50"
+              >
+                View customers
+
+                <ArrowUpRight size={15} />
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* RECENT APPOINTMENTS */}
+        <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-5">
+            <div>
+              <h2 className="font-semibold">
+                Recent appointments
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Recently returned booking records.
+              </p>
+            </div>
+
+            <Link
+              href="/admin/appointments"
+              className="shrink-0 text-sm font-semibold text-[#1e9be0] hover:text-blue-700"
+            >
+              View all
+            </Link>
+          </div>
+
+          {loading ? (
+            <div className="space-y-4 p-5">
+              {[1, 2, 3].map((item) => (
+                <div
+                  key={item}
+                  className="h-20 animate-pulse rounded-xl bg-slate-50"
+                />
+              ))}
+            </div>
+          ) : recentAppointments.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <CalendarDays
+                size={24}
+                className="mx-auto text-slate-300"
+              />
+
+              <p className="mt-3 text-sm font-medium text-slate-700">
+                No recent appointments
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {recentAppointments.map((appointment) => (
+                <AppointmentRow
+                  key={appointment.id}
+                  appointment={appointment}
+                  showDate
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* FOOTER */}
         <p className="mt-6 text-center text-xs text-slate-400">
-          Appointment dates and times are displayed in India Standard Time
-          (IST).
+          Appointment dates and times are displayed in India Standard Time (IST).
         </p>
       </div>
     </main>
