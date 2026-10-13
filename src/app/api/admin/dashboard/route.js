@@ -16,241 +16,46 @@ function getDateInIST(date = new Date()) {
 function getISTDayBounds(dateString) {
   const [year, month, day] = dateString.split("-").map(Number);
 
-  // IST is UTC+05:30.
-  const start = new Date(
-    Date.UTC(year, month - 1, day, -5, -30, 0, 0)
-  );
-
-  const nextDay = new Date(
-    Date.UTC(year, month - 1, day + 1, -5, -30, 0, 0)
-  );
+  const nextDate = new Date(Date.UTC(year, month - 1, day + 1));
+  const nextDateString = nextDate.toISOString().split("T")[0];
 
   return {
-    start: start.toISOString(),
-    end: nextDay.toISOString(),
+    start: `${dateString}T00:00:00+05:30`,
+    end: `${nextDateString}T00:00:00+05:30`,
   };
 }
 
-function addDays(dateString, days) {
-  const [year, month, day] = dateString.split("-").map(Number);
-
-  const date = new Date(Date.UTC(year, month - 1, day + days));
-
-  return [
-    date.getUTCFullYear(),
-    String(date.getUTCMonth() + 1).padStart(2, "0"),
-    String(date.getUTCDate()).padStart(2, "0"),
-  ].join("-");
-}
-
-function isValidDateString(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return false;
-  }
-
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
-}
-
-export async function GET(request) {
+export async function GET() {
   try {
-    
-
-    const { searchParams } = new URL(request.url);
-
+    // 1. Get today's date and IST boundaries
     const today = getDateInIST();
-
-    // The selected date affects the schedule, not today's metrics.
-    const selectedDate = searchParams.get("date") || today;
-
-    if (!isValidDateString(selectedDate)) {
-      return NextResponse.json(
-        { error: "Invalid date. Use YYYY-MM-DD." },
-        { status: 400 }
-      );
-    }
-
     const todayBounds = getISTDayBounds(today);
-    const selectedBounds = getISTDayBounds(selectedDate);
 
-    const upcomingEndDate = addDays(today, 7);
-    const upcomingEndBounds = getISTDayBounds(upcomingEndDate);
-
-    const now = new Date().toISOString();
-
-    // 1. Fetch today's appointments.
-    const { data: todayAppointments, error: todayError } =
+    // 2. Fetch appointments scheduled for today
+    const { data: appointments, error: appointmentsError } =
       await supabase
         .from("appointments")
-        .select(`
-          id,
-          customer_id,
-          start_time,
-          end_time,
-          status,
-          total_amount,
-          customers!appointments_customer_id_fkey (
-            id,
-            name,
-            phone
-          )
-        `)
+        .select("id, status, total_amount, start_time")
         .eq("business_id", BUSINESS_ID)
         .gte("start_time", todayBounds.start)
         .lt("start_time", todayBounds.end)
         .order("start_time", { ascending: true });
 
-    if (todayError) {
-      throw todayError;
-    }
+    if (appointmentsError) throw appointmentsError;
 
-    // 2. Fetch all customers belonging to this business.
-    const { data: customers, error: customersError } =
-      await supabase
-        .from("customers")
-        .select("id")
-        .eq("business_id", BUSINESS_ID);
-
-    if (customersError) {
-      throw customersError;
-    }
-
-    // 3. Fetch appointments scheduled within the next seven days.
-    const { data: upcomingAppointments, error: upcomingError } =
-      await supabase
-        .from("appointments")
-        .select(`
-          id,
-          customer_id,
-          start_time,
-          end_time,
-          status,
-          total_amount,
-          customers!appointments_customer_id_fkey (
-            id,
-            name,
-            phone
-          )
-        `)
-        .eq("business_id", BUSINESS_ID)
-        .gt("start_time", now)
-        .lt("start_time", upcomingEndBounds.end)
-        .in("status", ["pending", "confirmed"])
-        .order("start_time", { ascending: true });
-
-    if (upcomingError) {
-      throw upcomingError;
-    }
-
-    // 4. Fetch appointments for the selected schedule date.
-    const { data: selectedAppointments, error: selectedError } =
-      await supabase
-        .from("appointments")
-        .select(`
-          id,
-          customer_id,
-          start_time,
-          end_time,
-          status,
-          total_amount,
-          customers!appointments_customer_id_fkey (
-            id,
-            name,
-            phone
-          )
-        `)
-        .eq("business_id", BUSINESS_ID)
-        .gte("start_time", selectedBounds.start)
-        .lt("start_time", selectedBounds.end)
-        .order("start_time", { ascending: true });
-
-    if (selectedError) {
-      throw selectedError;
-    }
-
-    // 5. Fetch recent appointments.
-    const { data: recentAppointments, error: recentError } =
-      await supabase
-        .from("appointments")
-        .select(`
-          id,
-          customer_id,
-          start_time,
-          end_time,
-          status,
-          total_amount,
-          customers!appointments_customer_id_fkey (
-            id,
-            name,
-            phone
-          )
-        `)
-        .eq("business_id", BUSINESS_ID)
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-    if (recentError) {
-      throw recentError;
-    }
-
-    // 6. Fetch active staff.
-    const { data: activeStaff, error: staffError } =
-      await supabase
-        .from("staff")
-        .select("id, name")
-        .eq("business_id", BUSINESS_ID)
-        .eq("is_active", true);
-
-    if (staffError) {
-      throw staffError;
-    }
-
-    // 7. Find staff members who have a service in progress right now.
-    const { data: busyStaffRows, error: busyStaffError } =
-      await supabase
-        .from("appointment_services")
-        .select(`
-          staff_id,
-          appointments!inner (
-            business_id,
-            status
-          )
-        `)
-        .gte("start_time", "1900-01-01T00:00:00.000Z")
-        .lte("start_time", now)
-        .gt("end_time", now)
-        .in("appointments.status", ["pending", "confirmed"])
-        .eq("appointments.business_id", BUSINESS_ID);
-
-    if (busyStaffError) {
-      throw busyStaffError;
-    }
-
-    const busyStaffIds = new Set(
-      (busyStaffRows || [])
-        .map((row) => row.staff_id)
-        .filter(Boolean)
+    // 3. Exclude cancelled and no-show appointments
+    const activeAppointments = (appointments || []).filter(
+      (appointment) =>
+        !["cancelled", "no_show"].includes(appointment.status)
     );
 
-    const availableStaff = (activeStaff || []).filter(
-      (staffMember) => !busyStaffIds.has(staffMember.id)
+    // 4. Get completed appointments
+    const completedAppointments = activeAppointments.filter(
+      (appointment) => appointment.status === "completed"
     );
 
-    // 8. Calculate today's unique customers.
-    const todayCustomerIds = new Set(
-      (todayAppointments || [])
-        .map((appointment) => appointment.customer_id)
-        .filter(Boolean)
-    );
-
-    // 9. Calculate scheduled value, excluding cancelled appointments.
-    const scheduledValueToday = (todayAppointments || [])
+    // 5. Calculate expected revenue
+    const expectedRevenue = activeAppointments
       .filter((appointment) =>
         ["pending", "confirmed"].includes(appointment.status)
       )
@@ -260,46 +65,115 @@ export async function GET(request) {
         0
       );
 
+    // 6. Calculate completed service revenue
+    const completedServiceRevenue = completedAppointments.reduce(
+      (total, appointment) =>
+        total + Number(appointment.total_amount || 0),
+      0
+    );
+
+    // 7. Get total registered customers
+    const { count: totalCustomers, error: customersError } =
+      await supabase
+        .from("customers")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", BUSINESS_ID);
+
+    if (customersError) throw customersError;
+
+    // 8. Get customers registered today
+    const { count: newCustomersToday, error: newCustomersError } =
+      await supabase
+        .from("customers")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", BUSINESS_ID)
+        .gte("created_at", todayBounds.start)
+        .lt("created_at", todayBounds.end);
+
+    if (newCustomersError) throw newCustomersError;
+
+    // 9. Get all active staff
+    const { data: activeStaffMembers, error: staffError } =
+      await supabase
+        .from("staff")
+        .select("id, name")
+        .eq("business_id", BUSINESS_ID)
+        .eq("is_active", true);
+
+    if (staffError) throw staffError;
+
+    const activeStaff = activeStaffMembers || [];
+
+    // 10. Find all appointments that count as scheduled today
+    // Cancelled and no-show appointments do not occupy staff.
+    const scheduledAppointments = activeAppointments.filter(
+      (appointment) =>
+        ["pending", "confirmed", "completed"].includes(appointment.status)
+    );
+
+    const scheduledAppointmentIds = scheduledAppointments.map(
+      (appointment) => appointment.id
+    );
+
+    // 11. Find staff assigned to today's appointments
+    let assignedStaffIds = [];
+
+    if (scheduledAppointmentIds.length > 0) {
+      const { data: assignments, error: assignmentsError } =
+        await supabase
+          .from("appointment_services")
+          .select("staff_id")
+          .in("appointment_id", scheduledAppointmentIds);
+
+      if (assignmentsError) throw assignmentsError;
+
+      assignedStaffIds = [
+        ...new Set(
+          (assignments || [])
+            .map((assignment) => assignment.staff_id)
+            .filter(Boolean)
+        ),
+      ];
+    }
+
+    // 12. Find active staff with no appointments scheduled today
+    const assignedStaffSet = new Set(assignedStaffIds);
+
+    const availableStaff = activeStaff.filter(
+      (staffMember) => !assignedStaffSet.has(staffMember.id)
+    );
+
+    // 13. Return dashboard metrics
     return NextResponse.json({
       date: today,
-      selectedDate,
 
       metrics: {
-        todayAppointments: todayAppointments?.length || 0,
-        todayCustomers: todayCustomerIds.size,
-        totalCustomers: customers?.length || 0,
-        upcomingAppointments: upcomingAppointments?.length || 0,
-        activeStaff: activeStaff?.length || 0,
-        availableStaffNow: availableStaff.length,
-        scheduledValueToday,
+        todayAppointmentsCount: activeAppointments.length,
+        completedAppointmentsCount: completedAppointments.length,
+        expectedRevenue,
+        completedServiceRevenue,
+
+        totalCustomers: totalCustomers || 0,
+        newCustomersToday: newCustomersToday || 0,
+
+        activeStaff: activeStaff.length,
+        availableStaffCount: availableStaff.length,
       },
 
-      staff: {
-        availableNow: availableStaff,
-        activeCount: activeStaff?.length || 0,
-        availableCount: availableStaff.length,
+      data: {
+        appointments: activeAppointments,
+        completedAppointments,
+        availableStaff,
       },
-
-      schedule: {
-        date: selectedDate,
-        appointments: selectedAppointments || [],
-        total: selectedAppointments?.length || 0,
-      },
-
-      upcoming: {
-        appointments: upcomingAppointments || [],
-        total: upcomingAppointments?.length || 0,
-      },
-
-      recentAppointments: recentAppointments || [],
     });
   } catch (error) {
     console.error("Dashboard API error:", error);
 
     return NextResponse.json(
       {
-        error: "Failed to load dashboard data.",
-        details: error.message,
+        error: "Failed to load dashboard metrics.",
+        details:
+          error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );

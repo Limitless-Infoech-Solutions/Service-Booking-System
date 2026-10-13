@@ -3,31 +3,41 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  Activity,
+  AlertCircle,
+  ArrowRight,
+  Bell,
+  Calendar,
+  CalendarCheck,
   CalendarDays,
-  Users,
-  Clock3,
-  CalendarClock,
+  CalendarRange,
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ArrowUpRight,
+  Clock3,
+  Coins,
+  LayoutDashboard,
+  Menu,
   Plus,
-  UserPlus,
-  CalendarRange,
   Search,
-  Phone,
-  IndianRupee,
-  CalendarCheck,
-  AlertCircle,
+  Settings,
+  Scissors,
+  Sparkles,
+  Users,
   UserCheck,
+  UserPlus,
   UserRound,
-  Activity,
+  X,
 } from "lucide-react";
 
 const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
-
 const TIME_ZONE = "Asia/Kolkata";
 
-// Get today's date in India.
+// --------------------------------------------------
+// DATE AND CURRENCY HELPERS
+// --------------------------------------------------
+
 function getTodayInIndia() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: TIME_ZONE,
@@ -43,50 +53,71 @@ function getTodayInIndia() {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-// Add calendar days without depending on the browser's timezone.
 function addDays(dateString, amount) {
-  const date = new Date(`${dateString}T12:00:00Z`);
+  // 1. Ensure dateString is a valid string of at least 10 characters (YYYY-MM-DD)
+  // Otherwise, fallback to today's date in India to prevent Invalid Date errors
+  const safeDateString =
+    dateString && typeof dateString === "string" && dateString.length >= 10
+      ? dateString
+      : getTodayInIndia();
 
+  const date = new Date(`${safeDateString}T12:00:00Z`);
+
+  // 2. Ultimate fallback in the extremely rare case the date is still invalid
+  if (isNaN(date.getTime())) {
+    const fallbackDate = new Date(`${getTodayInIndia()}T12:00:00Z`);
+    fallbackDate.setUTCDate(fallbackDate.getUTCDate() + amount);
+    return fallbackDate.toISOString().slice(0, 10);
+  }
+
+  // 3. Normal execution
   date.setUTCDate(date.getUTCDate() + amount);
-
   return date.toISOString().slice(0, 10);
+}
+
+function formatDate(dateString, options = {}) {
+  if (!dateString) return "";
+
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: TIME_ZONE,
+    ...options,
+  }).format(new Date(`${dateString}T12:00:00+05:30`));
 }
 
 function formatTime(dateString) {
   if (!dateString) return "—";
 
-  const date = new Date(dateString);
-
-  if (Number.isNaN(date.getTime())) return "—";
-
   return new Intl.DateTimeFormat("en-IN", {
     timeZone: TIME_ZONE,
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
     hour12: true,
-  }).format(date);
+  }).format(new Date(dateString));
 }
 
-function formatDate(dateString) {
-  if (!dateString) return "";
-
-  const date = new Date(`${dateString}T12:00:00Z`);
-
-  return new Intl.DateTimeFormat("en-IN", {
-    timeZone: TIME_ZONE,
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(date);
+function formatCurrency(amount) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number(amount) || 0);
 }
 
-function formatShortDate(dateString) {
+function formatAppointmentDate(dateString, today) {
   if (!dateString) return "—";
 
   const date = new Date(dateString);
+  const appointmentDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 
-  if (Number.isNaN(date.getTime())) return "—";
+  const safeToday = today || getTodayInIndia();
+
+  if (appointmentDate === safeToday) return "Today";
+  if (appointmentDate === addDays(safeToday, 1)) return "Tomorrow";
 
   return new Intl.DateTimeFormat("en-IN", {
     timeZone: TIME_ZONE,
@@ -95,1097 +126,1389 @@ function formatShortDate(dateString) {
   }).format(date);
 }
 
-function formatCurrency(amount) {
-  const value = Number(amount);
+function getStatusClasses(status) {
+  const styles = {
+    confirmed: "bg-emerald-50 text-emerald-700",
+    completed: "bg-emerald-50 text-emerald-700",
+    pending: "bg-amber-50 text-amber-700",
+    cancelled: "bg-rose-50 text-rose-700",
+    no_show: "bg-slate-100 text-slate-600",
+  };
 
-  if (!Number.isFinite(value)) return "—";
-
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return styles[status] || "bg-blue-50 text-blue-700";
 }
 
-function getStatusStyle(status) {
-  const normalizedStatus = String(status || "").toLowerCase();
+// --------------------------------------------------
+// DEMO DATA
+// Replace these records with real API data later.
+// --------------------------------------------------
 
-  if (
-    normalizedStatus === "confirmed" ||
-    normalizedStatus === "completed"
-  ) {
-    return "bg-green-50 text-green-700";
-  }
+const DEMO_APPOINTMENTS = [
+  {
+    id: "demo-1",
+    time: "09:00 AM",
+    customer: "Priya Sharma",
+    phone: "+91 98765 43210",
+    services: "Haircut + Beard Trim",
+    staff: "Rohit",
+    status: "confirmed",
+    amount: 800,
+    dayOffset: 0,
+  },
+  {
+    id: "demo-2",
+    time: "10:30 AM",
+    customer: "Amit Verma",
+    phone: "+91 87654 32109",
+    services: "Hair Spa",
+    staff: "Neha",
+    status: "pending",
+    amount: 1200,
+    dayOffset: 0,
+  },
+  {
+    id: "demo-3",
+    time: "12:00 PM",
+    customer: "Sneha Patel",
+    phone: "+91 76543 21098",
+    services: "Facial",
+    staff: "Rohit",
+    status: "confirmed",
+    amount: 900,
+    dayOffset: 0,
+  },
+  {
+    id: "demo-4",
+    time: "02:00 PM",
+    customer: "Rahul Singh",
+    phone: "+91 65432 10987",
+    services: "Haircut",
+    staff: "Karan",
+    status: "completed",
+    amount: 500,
+    dayOffset: 0,
+  },
+  {
+    id: "demo-5",
+    time: "04:30 PM",
+    customer: "Anjali Mehta",
+    phone: "+91 98765 21098",
+    services: "Manicure + Pedicure",
+    staff: "Neha",
+    status: "confirmed",
+    amount: 1500,
+    dayOffset: 0,
+  },
+  {
+    id: "demo-6",
+    time: "06:00 PM",
+    customer: "Vikash Kumar",
+    phone: "+91 43210 98765",
+    services: "Beard Trim",
+    staff: "Karan",
+    status: "pending",
+    amount: 400,
+    dayOffset: 0,
+  },
+];
 
-  if (
-    normalizedStatus === "pending" ||
-    normalizedStatus === "pending_confirmation"
-  ) {
-    return "bg-amber-50 text-amber-700";
-  }
+const DEMO_UPCOMING = [
+  {
+    ...DEMO_APPOINTMENTS[1],
+    id: "upcoming-1",
+    time: "03:00 PM",
+    customer: "Neha Kapoor",
+    services: "Haircut + Hair Wash",
+    staff: "Rohit",
+    status: "confirmed",
+    dayOffset: 0,
+  },
+  {
+    ...DEMO_APPOINTMENTS[2],
+    id: "upcoming-2",
+    time: "04:30 PM",
+    customer: "Rohan Mehta",
+    services: "Beard Trim",
+    staff: "Karan",
+    status: "pending",
+    dayOffset: 0,
+  },
+  {
+    ...DEMO_APPOINTMENTS[0],
+    id: "upcoming-3",
+    time: "06:00 PM",
+    customer: "Simran Kaur",
+    services: "Facial",
+    staff: "Neha",
+    status: "confirmed",
+    dayOffset: 0,
+  },
+  {
+    ...DEMO_APPOINTMENTS[3],
+    id: "upcoming-4",
+    time: "10:00 AM",
+    customer: "Arjun Sharma",
+    services: "Haircut + Beard Trim",
+    staff: "Rohit",
+    status: "confirmed",
+    dayOffset: 1,
+  },
+  {
+    ...DEMO_APPOINTMENTS[4],
+    id: "upcoming-5",
+    time: "11:30 AM",
+    customer: "Pooja Singh",
+    services: "Hair Spa",
+    staff: "Neha",
+    status: "pending",
+    dayOffset: 1,
+  },
+];
 
-  if (
-    normalizedStatus === "cancelled" ||
-    normalizedStatus === "canceled"
-  ) {
-    return "bg-red-50 text-red-700";
-  }
+// --------------------------------------------------
+// REUSABLE COMPONENTS
+// --------------------------------------------------
 
-  if (normalizedStatus === "no_show") {
-    return "bg-slate-100 text-slate-600";
-  }
-
-  return "bg-slate-100 text-slate-600";
+function Card({ children, className = "" }) {
+  return (
+    <section
+      className={`rounded-2xl border border-slate-200/80 bg-white shadow-sm ${className}`}
+    >
+      {children}
+    </section>
+  );
 }
 
-function getCustomerName(appointment) {
-  return appointment.customers?.name || "Unknown customer";
+function SectionTitle({ icon: Icon, title, subtitle, action }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+          <Icon size={20} />
+        </span>
+
+        <div className="min-w-0">
+          <h2 className="font-semibold text-slate-900">{title}</h2>
+          {subtitle && (
+            <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>
+          )}
+        </div>
+      </div>
+
+      {action}
+    </div>
+  );
 }
 
-function getCustomerPhone(appointment) {
-  return appointment.customers?.phone || "";
-}
-
-function StatCard({
+function MetricCard({
   title,
   value,
-  description,
   icon: Icon,
-  iconClass,
+  iconColor = "blue",
+  subtitle,
   loading,
 }) {
+  const iconColors = {
+    blue: "bg-blue-100 text-blue-600",
+    green: "bg-emerald-100 text-emerald-600",
+    purple: "bg-violet-100 text-violet-600",
+    orange: "bg-orange-100 text-orange-600",
+    cyan: "bg-sky-100 text-sky-600",
+  };
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border border-slate-200/80 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-500">
-            {title}
-          </p>
+          <p className="text-sm font-medium text-slate-500">{title}</p>
 
-          <p className="mt-3 text-3xl font-semibold tracking-tight text-[#0b0e14]">
+          <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
             {loading ? (
-              <span className="inline-block h-9 w-16 animate-pulse rounded bg-slate-100" />
+              <span className="inline-block h-7 w-16 animate-pulse rounded bg-slate-100" />
             ) : (
               value
             )}
           </p>
         </div>
 
-        <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+            iconColors[iconColor]
+          }`}
         >
           <Icon size={21} />
-        </div>
+        </span>
       </div>
 
-      <p className="mt-3 text-xs leading-5 text-slate-500">
-        {description}
-      </p>
+      <p className="mt-3 text-xs text-slate-400">{subtitle}</p>
     </div>
   );
 }
 
-function SectionHeading({
-  title,
-  description,
-  icon: Icon,
-}) {
+function StatusBadge({ status }) {
   return (
-    <div className="mb-5 flex items-center gap-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#1e9be0]">
-        <Icon size={20} />
-      </div>
-
-      <div>
-        <h2 className="font-semibold text-slate-900">
-          {title}
-        </h2>
-
-        {description && (
-          <p className="mt-1 text-sm text-slate-500">
-            {description}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AppointmentRow({ appointment, showDate = false }) {
-  return (
-    <Link
-      href={`/admin/appointments/${appointment.id}`}
-      className="group block px-5 py-4 transition hover:bg-slate-50"
+    <span
+      className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${getStatusClasses(
+        status
+      )}`}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex shrink-0 items-start gap-3 sm:w-28 sm:flex-col sm:gap-1">
-          {showDate && (
-            <p className="text-xs font-medium text-slate-500">
-              {formatShortDate(appointment.start_time)}
-            </p>
-          )}
-
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-[#1e9be0]">
-            <Clock3 size={15} />
-
-            {formatTime(appointment.start_time)}
-          </div>
-
-          <p className="pl-5 text-xs text-slate-400 sm:pl-0">
-            to {formatTime(appointment.end_time)}
-          </p>
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-slate-900 transition group-hover:text-[#1e9be0]">
-              {getCustomerName(appointment)}
-            </h3>
-
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${getStatusStyle(
-                appointment.status
-              )}`}
-            >
-              {String(appointment.status || "unknown").replaceAll(
-                "_",
-                " "
-              )}
-            </span>
-          </div>
-
-          {getCustomerPhone(appointment) && (
-            <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
-              <Phone size={14} />
-
-              {getCustomerPhone(appointment)}
-            </p>
-          )}
-
-          <p className="mt-1 text-xs text-slate-400">
-            Appointment #{appointment.id.slice(0, 8)}
-          </p>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1 text-sm font-semibold text-slate-800">
-          <IndianRupee size={15} />
-
-          {formatCurrency(appointment.total_amount)}
-        </div>
-      </div>
-    </Link>
+      {String(status || "scheduled").replaceAll("_", " ")}
+    </span>
   );
 }
+
+function AppointmentTable({ appointments, today, onView }) {
+  if (!appointments.length) {
+    return (
+      <div className="px-5 py-12 text-center">
+        <CalendarDays className="mx-auto text-slate-300" size={28} />
+        <p className="mt-3 text-sm font-semibold text-slate-700">
+          No appointments for this date
+        </p>
+        <p className="mt-1 text-xs text-slate-400">
+          Select another date or create a new appointment.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-180t-left">
+        <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+          <tr>
+            <th className="px-4 py-3 font-semibold">Time</th>
+            <th className="px-4 py-3 font-semibold">Customer</th>
+            <th className="px-4 py-3 font-semibold">Services</th>
+            <th className="px-4 py-3 font-semibold">Staff</th>
+            <th className="px-4 py-3 font-semibold">Status</th>
+            <th className="px-4 py-3 font-semibold">Action</th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-slate-100">
+          {appointments.map((appointment) => (
+            <tr
+              key={appointment.id}
+              className="transition hover:bg-blue-50/30"
+            >
+              <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-slate-700">
+                {appointment.time || formatTime(appointment.start_time)}
+              </td>
+
+              <td className="px-4 py-3">
+                <p className="whitespace-nowrap text-xs font-semibold text-slate-800">
+                  {appointment.customer ||
+                    appointment.customers?.name ||
+                    "Customer"}
+                </p>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  {appointment.phone || appointment.customers?.phone || ""}
+                </p>
+              </td>
+
+              <td className="px-4 py-3 text-xs text-slate-600">
+                {appointment.services ||
+                  appointment.service_names ||
+                  "Service booking"}
+              </td>
+
+              <td className="px-4 py-3 text-xs text-slate-600">
+                {appointment.staff || appointment.staff_name || "Assigned"}
+              </td>
+
+              <td className="px-4 py-3">
+                <StatusBadge status={appointment.status} />
+              </td>
+
+              <td className="px-4 py-3">
+                {appointment.id.startsWith("demo-") ||
+                appointment.id.startsWith("upcoming-") ||
+                appointment.id.startsWith("recent-") ? (
+                  <button
+                    type="button"
+                    onClick={() => onView(appointment)}
+                    className="rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                  >
+                    View
+                  </button>
+                ) : (
+                  <Link
+                    href={`/admin/appointments/${appointment.id}`}
+                    className="rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                  >
+                    View
+                  </Link>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// --------------------------------------------------
+// MAIN DASHBOARD
+// --------------------------------------------------
 
 export default function AdminDashboard() {
   const [today, setToday] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
-
   const [dashboardData, setDashboardData] = useState(null);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState("");
+  const [viewingWeek, setViewingWeek] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
 
-  // Initialize dates in India Standard Time.
   useEffect(() => {
     const currentDate = getTodayInIndia();
-
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setToday(currentDate);
     setSelectedDate(currentDate);
+    setCalendarMonth(currentDate.slice(0, 7));
   }, []);
 
-  // Fetch the dashboard's actual API response.
-  const loadDashboard = useCallback(async (date) => {
-    if (!date) return;
-
+  // Fetch real metrics from the dashboard API.
+  const loadDashboard = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
 
       const response = await fetch(
-        `/api/admin/dashboard?business_id=${BUSINESS_ID}&date=${date}`,
-        {
-          cache: "no-store",
-        }
+        `/api/admin/dashboard?business_id=${BUSINESS_ID}`,
+        { cache: "no-store" }
       );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data.error || "Failed to load dashboard."
-        );
+        throw new Error(data.error || "Failed to load dashboard.");
       }
 
       setDashboardData(data);
     } catch (err) {
       console.error("Dashboard loading error:", err);
-
-      setError(
-        err.message || "Unable to load dashboard information."
-      );
+      setError(err.message || "Unable to load dashboard.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!selectedDate) return;
-
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadDashboard(selectedDate);
-  }, [selectedDate, loadDashboard]);
+    loadDashboard();
+  }, [loadDashboard]);
 
-  // Values returned by the dashboard API.
   const metrics = dashboardData?.metrics || {};
+  const availableStaff = dashboardData?.data?.availableStaff || [];
 
-  const selectedAppointments =
-    dashboardData?.schedule?.appointments || [];
+  // The API currently returns today's appointments only.
+  // Selected dates use demo records until a date-specific schedule API exists.
+  const safeToday = today || getTodayInIndia();
+  const useDemoSchedule = selectedDate !== safeToday;
+  const realAppointments = dashboardData?.data?.appointments || [];
 
-  const upcomingAppointments =
-    dashboardData?.upcoming?.appointments || [];
+  const realSelectedAppointments =
+    !useDemoSchedule && realAppointments.length
+      ? realAppointments.map((appointment) => ({
+          ...appointment,
+          time: formatTime(appointment.start_time),
+        }))
+      : [];
 
-  const recentAppointments =
-    dashboardData?.recentAppointments || [];
+  const demoAppointments = DEMO_APPOINTMENTS.map((appointment) => ({
+    ...appointment,
+    date: addDays(safeToday, appointment.dayOffset),
+  }));
 
-  const availableStaff =
-    dashboardData?.staff?.availableNow || [];
+  const selectedAppointments = useDemoSchedule
+    ? demoAppointments.filter((appointment) => appointment.date === selectedDate)
+    : realSelectedAppointments.length
+      ? realSelectedAppointments
+      : demoAppointments.filter((appointment) => appointment.date === selectedDate);
 
-  const activeStaffCount =
-    metrics.activeStaff ??
-    dashboardData?.staff?.activeCount ??
-    0;
+  const upcomingAppointments = DEMO_UPCOMING.map((appointment) => ({
+    ...appointment,
+    date: addDays(safeToday, appointment.dayOffset),
+  }));
 
-  const availableStaffCount =
-    metrics.availableStaffNow ??
-    dashboardData?.staff?.availableCount ??
-    availableStaff.length;
+  const activeStaffCount = Number(metrics.activeStaff ?? 0);
+  const availableStaffCount = Number(
+    metrics.availableStaffCount ?? availableStaff.length
+  );
 
-  // Count unique customers on the selected date.
+  const pendingActions = realAppointments.filter(
+    (appointment) => appointment.status === "pending"
+  ).length;
+
   const selectedDayCustomerCount = new Set(
     selectedAppointments
-      .map((appointment) => appointment.customer_id)
+      .map((appointment) => appointment.customer_id || appointment.customer)
       .filter(Boolean)
   ).size;
 
-  // Scheduled value for the selected date.
-  const scheduledValueSelectedDate =
-    selectedAppointments.reduce((sum, appointment) => {
-      const status = String(
-        appointment.status || ""
-      ).toLowerCase();
-
-      if (
-        status === "cancelled" ||
-        status === "canceled"
-      ) {
-        return sum;
+  const selectedScheduledValue = selectedAppointments.reduce(
+    (total, appointment) => {
+      if (["cancelled", "no_show"].includes(appointment.status)) {
+        return total;
       }
 
-      const amount = Number(appointment.total_amount);
-
-      return sum + (Number.isFinite(amount) ? amount : 0);
-    }, 0);
-
-  const activeUpcomingAppointments =
-    upcomingAppointments.filter((appointment) => {
-      const status = String(
-        appointment.status || ""
-      ).toLowerCase();
-
-      return (
-        status !== "cancelled" &&
-        status !== "canceled"
-      );
-    });
+      return total + Number(appointment.total_amount ?? appointment.amount ?? 0);
+    },
+    0
+  );
 
   function changeDate(days) {
-    setSelectedDate((currentDate) => {
-      if (!currentDate) return getTodayInIndia();
-
-      return addDays(currentDate, days);
+    setSelectedDate((current) => {
+      const baseDate = current || safeToday;
+      return addDays(baseDate, days);
     });
   }
 
+  function changeMonth(amount) {
+    const current = new Date(`${calendarMonth}-15T12:00:00Z`);
+    current.setUTCMonth(current.getUTCMonth() + amount);
+    setCalendarMonth(current.toISOString().slice(0, 7));
+  }
+
+  const monthDate = calendarMonth
+    ? new Date(`${calendarMonth}-01T12:00:00Z`)
+    : new Date();
+
+  const monthLabel = new Intl.DateTimeFormat("en-IN", {
+    timeZone: TIME_ZONE,
+    month: "long",
+    year: "numeric",
+  }).format(monthDate);
+
+  const firstDay = monthDate.getUTCDay();
+  const daysInMonth = new Date(
+    Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 0)
+  ).getUTCDate();
+
+  const calendarCells = [
+    ...Array(firstDay).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+  ];
+
+  const demoDatesWithAppointments = new Set([
+    safeToday,
+    addDays(safeToday, 1),
+  ]);
+
+  const quickActions = [
+    {
+      label: "Walk-in",
+      description: "Register a walk-in customer",
+      href: "/admin/appointments/new?type=walk-in",
+      icon: UserPlus,
+      style: "bg-emerald-50 text-emerald-600 border-emerald-100",
+    },
+    {
+      label: "New Appointment",
+      description: "Book a new appointment",
+      href: "/admin/appointments/new",
+      icon: CalendarCheck,
+      style: "bg-blue-50 text-blue-600 border-blue-100",
+    },
+    {
+      label: "View Calendar",
+      description: "Open the full calendar",
+      href: "/admin/calendar",
+      icon: CalendarRange,
+      style: "bg-rose-50 text-rose-600 border-rose-100",
+    },
+    {
+      label: "Find Customer",
+      description: "Search customer details",
+      href: "/admin/customers",
+      icon: Search,
+      style: "bg-sky-50 text-sky-600 border-sky-100",
+    },
+  ];
+
+  const navItems = [
+    { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
+    { label: "Appointments", href: "/admin/appointments", icon: CalendarDays },
+    { label: "Customers", href: "/admin/customers", icon: Users },
+    { label: "Staff", href: "/admin/staff", icon: UserRound },
+    { label: "Services", href: "/admin/services", icon: Scissors },
+    { label: "Calendar", href: "/admin/calendar", icon: Calendar },
+    { label: "Reports", href: "/admin/reports", icon: Activity },
+    { label: "Settings", href: "/admin/settings", icon: Settings },
+  ];
+
   return (
-    <main className="min-h-screen bg-[#f5f7fa] px-4 py-6 text-[#0b0e14] sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+    // Added w-full and overflow-x-hidden to prevent any horizontal spacing/scroll issues
+    <div className="min-h-screen w-full overflow-x-hidden bg-[#f4f7fc] text-slate-900">
+      {/* Mobile menu backdrop */}
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-950/50 lg:hidden"
+        />
+      )}
 
-        {/* HEADER */}
-        <header className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+      {/* SIDEBAR */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-[#101c3a] text-white transition-transform duration-300 lg:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex h-20 items-center gap-3 border-b border-white/10 px-6">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-pink-300">
+            <Sparkles size={27} />
+          </span>
+
           <div>
-            <p className="mb-2 text-sm font-medium text-[#1e9be0]">
-              BUSINESS MANAGEMENT
-            </p>
-
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              Dashboard
-            </h1>
-
-            <p className="mt-2 text-sm text-slate-500">
-              Monitor appointments, customers, staff, and business activity.
-            </p>
+            <p className="text-lg font-bold">GlowStudio</p>
+            <p className="text-xs text-slate-400">Beauty & Wellness</p>
           </div>
 
-          <Link
-            href="/admin/appointments"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0b0e14] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setSidebarOpen(false)}
+            className="ml-auto rounded-lg p-2 text-slate-300 hover:bg-white/10 lg:hidden"
           >
-            All appointments
+            <X size={19} />
+          </button>
+        </div>
 
-            <ArrowUpRight size={16} />
+        <nav className="flex-1 space-y-1 px-3 py-5">
+          {navItems.map(({ label, href, icon: Icon }) => (
+            <Link
+              key={label}
+              href={href}
+              onClick={() => setSidebarOpen(false)}
+              className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition ${
+                label === "Dashboard"
+                  ? "bg-blue-600/50 font-semibold text-white"
+                  : "text-slate-300 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Icon size={18} />
+              {label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="m-4 rounded-xl border border-white/10 bg-white/5 p-4">
+          <Sparkles size={20} className="mb-3 text-blue-300" />
+          <p className="text-sm font-semibold">Grow Your Business</p>
+          <p className="mt-2 text-xs leading-5 text-slate-400">
+            Better service. Happier customers. More bookings.
+          </p>
+          <Link
+            href="/admin/reports"
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold hover:bg-blue-500"
+          >
+            Explore reports <ArrowRight size={14} />
           </Link>
+        </div>
+
+        <div className="border-t border-white/10 p-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-700 text-sm font-bold">
+              AD
+            </span>
+            <div>
+              <p className="text-sm font-semibold">Admin</p>
+              <p className="text-xs text-slate-400">Business Owner</p>
+            </div>
+            <ChevronDown size={16} className="ml-auto text-slate-400" />
+          </div>
+        </div>
+      </aside>
+
+      {/* MAIN AREA - Added w-full to ensure it fills the remaining space perfectly */}
+      <main className="min-h-screen w-full lg:pl-64">
+        {/* HEADER */}
+        <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
+          <div className="flex min-h-20 items-center justify-between gap-4 px-4 sm:px-6 xl:px-8">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                aria-label="Open navigation"
+                onClick={() => setSidebarOpen(true)}
+                className="rounded-lg border border-slate-200 p-2 lg:hidden"
+              >
+                <Menu size={20} />
+              </button>
+
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+                  Dashboard
+                </h1>
+                <p className="mt-1 hidden text-sm text-slate-500 sm:block">
+                  Here&apos;s what&apos;s happening with your business today.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-4">
+              <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 sm:flex">
+                <CalendarDays size={16} className="text-blue-600" />
+                {formatDate(safeToday, {
+                  weekday: "short",
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </div>
+
+              <button
+                type="button"
+                aria-label="Notifications"
+                className="relative rounded-xl border border-slate-200 p-2.5 text-slate-600 hover:bg-slate-50"
+              >
+                <Bell size={19} />
+                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500" />
+              </button>
+
+              <div className="hidden items-center gap-2 sm:flex">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-700">
+                  AD
+                </span>
+                <div>
+                  <p className="text-xs font-semibold">Admin</p>
+                  <p className="text-[10px] text-slate-500">Business Owner</p>
+                </div>
+                <ChevronDown size={15} className="text-slate-500" />
+              </div>
+            </div>
+          </div>
         </header>
 
-        {/* ERROR */}
-        {error && (
-          <div
-            role="alert"
-            className="mb-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
-          >
-            <AlertCircle
-              size={19}
-              className="mt-0.5 shrink-0"
-            />
+        <div className="space-y-5 p-4 sm:p-6 xl:p-8">
+          {error && (
+            <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+              <AlertCircle size={18} />
+              <p className="flex-1">{error}</p>
+              <button
+                type="button"
+                onClick={loadDashboard}
+                className="font-semibold underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">
-                Unable to load dashboard data
-              </p>
-
-              <p className="mt-1">{error}</p>
+          {/* QUICK ACTIONS */}
+          <Card className="p-4 sm:p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <h2 className="font-bold">Quick Actions</h2>
+              <span className="text-xs text-slate-400">
+                Get things done, faster.
+              </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => loadDashboard(selectedDate)}
-              className="shrink-0 font-semibold underline"
-            >
-              Retry
-            </button>
-          </div>
-        )}
+            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+              {quickActions.map((action) => {
+                const Icon = action.icon;
 
-        {/* QUICK ACTIONS */}
-        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4">
-            <h2 className="font-semibold">
-              Quick actions
-            </h2>
+                return (
+                  <Link
+                    key={action.label}
+                    href={action.href}
+                    className={`group flex min-h-28 items-center gap-3 rounded-xl border p-4 transition hover:-translate-y-0.5 hover:shadow-md ${action.style}`}
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/80">
+                      <Icon size={21} />
+                    </span>
 
-            <p className="mt-1 text-sm text-slate-500">
-              Quickly access common tasks.
-            </p>
-          </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold text-slate-900">
+                        {action.label}
+                      </span>
+                      <span className="mt-1 block text-xs text-slate-500">
+                        {action.description}
+                      </span>
+                    </span>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Link
-              href="/admin/appointments/new?type=walk-in"
-              className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#1e9be0] hover:bg-blue-50/50"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[#1e9be0]">
-                <UserPlus size={19} />
-              </span>
+                    <ChevronRight
+                      size={18}
+                      className="shrink-0 text-slate-500 transition group-hover:translate-x-1"
+                    />
+                  </Link>
+                );
+              })}
+            </div>
+          </Card>
 
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold">
-                  Add Walk-in
-                </span>
-
-                <span className="mt-1 block text-xs text-slate-500">
-                  Register an in-person booking
-                </span>
-              </span>
-
-              <ArrowUpRight
-                size={16}
-                className="text-slate-400 group-hover:text-[#1e9be0]"
-              />
-            </Link>
-
-            <Link
-              href="/admin/appointments/new"
-              className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#1e9be0] hover:bg-blue-50/50"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
-                <Plus size={19} />
-              </span>
-
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold">
-                  New Appointment
-                </span>
-
-                <span className="mt-1 block text-xs text-slate-500">
-                  Create a new booking
-                </span>
-              </span>
-
-              <ArrowUpRight
-                size={16}
-                className="text-slate-400 group-hover:text-[#1e9be0]"
-              />
-            </Link>
-
-            <Link
-              href="/admin/calendar"
-              className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#1e9be0] hover:bg-blue-50/50"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700">
-                <CalendarRange size={19} />
-              </span>
-
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold">
-                  View Calendar
-                </span>
-
-                <span className="mt-1 block text-xs text-slate-500">
-                  Browse the booking calendar
-                </span>
-              </span>
-
-              <ArrowUpRight
-                size={16}
-                className="text-slate-400 group-hover:text-[#1e9be0]"
-              />
-            </Link>
-
-            <Link
-              href="/admin/customers"
-              className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-[#1e9be0] hover:bg-blue-50/50"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                <Search size={19} />
-              </span>
-
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold">
-                  Find Customer
-                </span>
-
-                <span className="mt-1 block text-xs text-slate-500">
-                  Search customer records
-                </span>
-              </span>
-
-              <ArrowUpRight
-                size={16}
-                className="text-slate-400 group-hover:text-[#1e9be0]"
-              />
-            </Link>
-          </div>
-        </section>
-
-        {/* BUSINESS OVERVIEW */}
-        <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="mb-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1e9be0]">
-              At a glance
-            </p>
-
-            <h2 className="mt-1 text-lg font-semibold">
-              Business overview
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Today&apos;s key business metrics.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-
-            {/* Today's appointments */}
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="flex items-center gap-2 text-slate-500">
-                <CalendarCheck size={17} />
-
-                <span className="text-xs font-medium sm:text-sm">
-                  Today&apos;s Appointments
-                </span>
+          {/* BUSINESS OVERVIEW */}
+          <Card className="p-4 sm:p-5">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-bold">Business Overview at a Glance</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Today&apos;s business metrics
+                </p>
               </div>
 
-              <p className="mt-3 text-2xl font-semibold">
-                {loading
-                  ? "—"
-                  : metrics.todayAppointments ?? 0}
-              </p>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Appointments scheduled today
-              </p>
+              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">
+                Today ·{" "}
+                {formatDate(safeToday, {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </span>
             </div>
 
-            {/* Pending actions placeholder */}
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="flex items-center gap-2 text-slate-500">
-                <AlertCircle size={17} />
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <MetricCard
+                title="New Customers"
+                value={metrics.newCustomersToday ?? 0}
+                icon={Users}
+                iconColor="green"
+                subtitle="Registered today"
+                loading={loading}
+              />
 
-                <span className="text-xs font-medium sm:text-sm">
-                  Pending Actions
-                </span>
+              <MetricCard
+                title="Today's Appointments"
+                value={metrics.todayAppointmentsCount ?? 0}
+                icon={CalendarCheck}
+                iconColor="blue"
+                subtitle="Excludes cancelled and no-show"
+                loading={loading}
+              />
+
+              <MetricCard
+                title="Expected Revenue"
+                value={formatCurrency(metrics.expectedRevenue ?? 0)}
+                icon={Coins}
+                iconColor="purple"
+                subtitle="Pending and confirmed bookings"
+                loading={loading}
+              />
+
+              <MetricCard
+                title="Pending Actions"
+                value={pendingActions}
+                icon={AlertCircle}
+                iconColor="orange"
+                subtitle="Pending appointments returned by API"
+                loading={loading}
+              />
+
+              <MetricCard
+                title="Total Staff"
+                value={activeStaffCount}
+                icon={Users}
+                iconColor="cyan"
+                subtitle="Active staff members"
+                loading={loading}
+              />
+
+              <MetricCard
+                title="Available Staff"
+                value={availableStaffCount}
+                icon={UserCheck}
+                iconColor="green"
+                subtitle="No appointments scheduled today"
+                loading={loading}
+              />
+            </div>
+          </Card>
+
+          {/* CALENDAR AND DAILY SCHEDULE */}
+          <div className="grid items-start gap-5 2xl:grid-cols-[310px_minmax(0,1fr)]">
+            {/* CALENDAR */}
+            <Card className="p-4 sm:p-5">
+              <SectionTitle
+                icon={CalendarDays}
+                title="Calendar"
+                subtitle="Select a date to view the schedule"
+              />
+
+              <div className="mt-5 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => changeMonth(-1)}
+                  aria-label="Previous month"
+                  className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+
+                <p className="text-sm font-semibold">{monthLabel}</p>
+
+                <button
+                  type="button"
+                  onClick={() => changeMonth(1)}
+                  aria-label="Next month"
+                  className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+                >
+                  <ChevronRight size={18} />
+                </button>
               </div>
 
-              <p className="mt-3 text-2xl font-semibold">
-                —
-              </p>
+              <div className="mt-4 grid grid-cols-7 text-center">
+                {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
+                  <span
+                    key={day}
+                    className="py-2 text-[10px] font-semibold text-slate-400"
+                  >
+                    {day}
+                  </span>
+                ))}
 
-              <p className="mt-1 text-xs text-slate-500">
-                Action rules not connected yet
-              </p>
-            </div>
+                {calendarCells.map((day, index) => {
+                  if (!day) {
+                    return <span key={`blank-${index}`} />;
+                  }
 
-            {/* Scheduled value */}
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="flex items-center gap-2 text-slate-500">
-                <IndianRupee size={17} />
+                  const dateString = `${calendarMonth}-${String(day).padStart(
+                    2,
+                    "0"
+                  )}`;
 
-                <span className="text-xs font-medium sm:text-sm">
-                  Scheduled Value Today
-                </span>
+                  const isSelected = selectedDate === dateString;
+                  const isToday = safeToday === dateString;
+                  const hasAppointments =
+                    demoDatesWithAppointments.has(dateString);
+
+                  return (
+                    <button
+                      key={dateString}
+                      type="button"
+                      onClick={() => setSelectedDate(dateString)}
+                      className={`relative mx-auto my-1 flex h-9 w-9 items-center justify-center rounded-full text-xs transition ${
+                        isSelected
+                          ? "bg-blue-600 font-bold text-white shadow-md"
+                          : isToday
+                            ? "border border-blue-300 font-bold text-blue-600"
+                            : "text-slate-600 hover:bg-blue-50"
+                      }`}
+                    >
+                      {day}
+                      {hasAppointments && !isSelected && (
+                        <span className="absolute bottom-1 h-1 w-1 rounded-full bg-emerald-500" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
-              <p className="mt-3 text-xl font-semibold sm:text-2xl">
-                {loading
-                  ? "—"
-                  : formatCurrency(
-                      metrics.scheduledValueToday ?? 0
-                    )}
-              </p>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Excludes cancelled bookings
-              </p>
-            </div>
-
-            {/* Available staff */}
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="flex items-center gap-2 text-slate-500">
-                <UserCheck size={17} />
-
-                <span className="text-xs font-medium sm:text-sm">
-                  Staff Available Now
-                </span>
+              <div className="mt-5 space-y-2 border-t border-slate-100 pt-4 text-xs text-slate-500">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-blue-600" />
+                  Selected date
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full border border-blue-500" />
+                  Today
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  Demo appointments
+                </div>
               </div>
 
-              <p className="mt-3 text-2xl font-semibold">
-                {loading ? "—" : availableStaffCount}
-              </p>
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <label
+                  htmlFor="dashboard-date"
+                  className="mb-2 block text-xs font-medium text-slate-500"
+                >
+                  Choose exact date
+                </label>
 
-              <p className="mt-1 text-xs text-slate-500">
-                Out of {loading ? "—" : activeStaffCount} active staff
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* DATE SELECTOR */}
-        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-            <div>
-              <div className="flex items-center gap-2">
-                <CalendarDays
-                  size={20}
-                  className="text-[#1e9be0]"
+                <input
+                  id="dashboard-date"
+                  type="date"
+                  value={selectedDate}
+                  onChange={(event) => setSelectedDate(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 />
 
-                <h2 className="font-semibold">
-                  Daily schedule
-                </h2>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(safeToday)}
+                  className="mt-2 w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Return to today
+                </button>
               </div>
+            </Card>
 
-              <p className="mt-1 text-sm text-slate-500">
-                {selectedDate
-                  ? formatDate(selectedDate)
-                  : "Preparing schedule..."}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => changeDate(-1)}
-                disabled={!selectedDate}
-                aria-label="Previous day"
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 transition hover:bg-slate-50 disabled:opacity-50"
-              >
-                <ChevronLeft size={19} />
-              </button>
-
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(event) =>
-                  setSelectedDate(event.target.value)
-                }
-                aria-label="Select appointment date"
-                className="h-10 min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-[#1e9be0] focus:ring-2 focus:ring-[#1e9be0]/10"
-              />
-
-              <button
-                type="button"
-                onClick={() => changeDate(1)}
-                disabled={!selectedDate}
-                aria-label="Next day"
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 transition hover:bg-slate-50 disabled:opacity-50"
-              >
-                <ChevronRight size={19} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedDate(getTodayInIndia())}
-                disabled={!selectedDate || selectedDate === today}
-                className="h-10 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Today
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* FOUR KPI CARDS */}
-        <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            title="Today's Appointments"
-            value={metrics.todayAppointments ?? 0}
-            description="Appointments starting today"
-            icon={CalendarCheck}
-            iconClass="bg-blue-50 text-blue-600"
-            loading={loading}
-          />
-
-          <StatCard
-            title="Today's Customers"
-            value={metrics.todayCustomers ?? 0}
-            description="Unique customers with appointments today"
-            icon={Users}
-            iconClass="bg-violet-50 text-violet-600"
-            loading={loading}
-          />
-
-          <StatCard
-            title="Selected-Day Appointments"
-            value={dashboardData?.schedule?.total ?? selectedAppointments.length}
-            description="Appointments on the selected date"
-            icon={CalendarDays}
-            iconClass="bg-cyan-50 text-cyan-700"
-            loading={loading}
-          />
-
-          <StatCard
-            title="Upcoming Appointments"
-            value={metrics.upcomingAppointments ?? activeUpcomingAppointments.length}
-            description="Upcoming bookings returned by the dashboard API"
-            icon={CalendarClock}
-            iconClass="bg-amber-50 text-amber-600"
-            loading={loading}
-          />
-        </section>
-
-        {/* MAIN CONTENT */}
-        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_350px]">
-
-          {/* APPOINTMENT SCHEDULE */}
-          <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-5">
-              <div>
-                <h2 className="font-semibold">
-                  Appointments schedule
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  {selectedDate
-                    ? formatDate(selectedDate)
-                    : "Loading date..."}
-                </p>
-              </div>
-
-              <span className="shrink-0 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                {loading
-                  ? "Loading..."
-                  : `${dashboardData?.schedule?.total ?? selectedAppointments.length} total`}
-              </span>
-            </div>
-
-            {loading ? (
-              <div className="space-y-4 p-5">
-                {[1, 2, 3, 4].map((item) => (
-                  <div
-                    key={item}
-                    className="h-24 animate-pulse rounded-xl bg-slate-50"
-                  />
-                ))}
-              </div>
-            ) : selectedAppointments.length === 0 ? (
-              <div className="px-5 py-16 text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-400">
-                  <CalendarDays size={25} />
+            {/* DAILY SCHEDULE */}
+            <Card className="min-w-0 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
+                <div>
+                  <h2 className="font-bold">Daily Schedule</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatDate(selectedDate, {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </p>
                 </div>
 
-                <h3 className="mt-4 font-semibold text-slate-800">
-                  No appointments for this date
-                </h3>
-
-                <p className="mt-2 text-sm text-slate-500">
-                  Choose another date to view its appointments.
-                </p>
-
-                {selectedDate !== today && today && (
+                <div className="flex items-center gap-1 rounded-full bg-slate-100 p-1">
                   <button
                     type="button"
-                    onClick={() => setSelectedDate(today)}
-                    className="mt-4 rounded-lg bg-[#0b0e14] px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                    onClick={() => setViewingWeek(false)}
+                    className={`rounded-full px-4 py-1.5 text-xs font-semibold ${
+                      !viewingWeek
+                        ? "bg-blue-700 text-white shadow"
+                        : "text-slate-500"
+                    }`}
                   >
-                    Return to today
+                    Day
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() => setViewingWeek(true)}
+                    className={`rounded-full px-4 py-1.5 text-xs font-semibold ${
+                      viewingWeek
+                        ? "bg-blue-700 text-white shadow"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    Week
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {selectedAppointments.map((appointment) => (
-                  <AppointmentRow
-                    key={appointment.id}
-                    appointment={appointment}
-                  />
-                ))}
-              </div>
-            )}
 
-            <div className="border-t border-slate-100 px-5 py-4">
-              <Link
-                href="/admin/appointments"
-                className="inline-flex items-center gap-2 text-sm font-semibold text-[#1e9be0] transition hover:text-blue-700"
-              >
-                Manage all appointments
+              {viewingWeek && (
+                <div className="flex items-center justify-between border-y border-blue-100 bg-blue-50/60 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => changeDate(-7)}
+                    className="rounded-lg p-1 hover:bg-white"
+                    aria-label="Previous week"
+                  >
+                    <ChevronLeft size={17} />
+                  </button>
+                  <span className="text-xs font-semibold text-blue-700">
+                    Week of {formatDate(selectedDate, { day: "numeric", month: "short" })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => changeDate(7)}
+                    className="rounded-lg p-1 hover:bg-white"
+                    aria-label="Next week"
+                  >
+                    <ChevronRight size={17} />
+                  </button>
+                </div>
+              )}
 
-                <ArrowUpRight size={16} />
-              </Link>
-            </div>
-          </section>
-
-          {/* RIGHT COLUMN */}
-          <aside className="space-y-6">
-
-            {/* DAILY SUMMARY */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <SectionHeading
-                title="Daily summary"
-                description="Selected date"
-                icon={Activity}
+              <AppointmentTable
+                appointments={selectedAppointments}
+                today={safeToday}
+                onView={setSelectedAppointment}
               />
 
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-slate-500">
-                    Appointments
-                  </span>
-
-                  <span className="font-semibold">
-                    {loading
-                      ? "—"
-                      : dashboardData?.schedule?.total ??
-                        selectedAppointments.length}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-slate-500">
-                    Unique customers
-                  </span>
-
-                  <span className="font-semibold">
-                    {loading ? "—" : selectedDayCustomerCount}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-slate-500">
-                    Scheduled value
-                  </span>
-
-                  <span className="font-semibold">
-                    {loading
-                      ? "—"
-                      : formatCurrency(
-                          scheduledValueSelectedDate
-                        )}
-                  </span>
-                </div>
+              <div className="border-t border-slate-100 px-5 py-3">
+                <Link
+                  href="/admin/appointments"
+                  className="inline-flex items-center gap-2 text-xs font-semibold text-blue-600 hover:text-blue-800"
+                >
+                  Manage all appointments <ArrowRight size={14} />
+                </Link>
               </div>
+            </Card>
+          </div>
 
-              <p className="mt-4 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-400">
-                Scheduled value excludes cancelled appointments.
-                It does not necessarily represent money collected.
-              </p>
-            </section>
+          {/* DAILY SUMMARY AND AVAILABLE STAFF */}
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card className="p-5">
+              <SectionTitle
+                icon={Activity}
+                title="Daily Summary"
+                subtitle="Selected date overview"
+              />
 
-            {/* STAFF AVAILABILITY */}
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-100 p-5">
-                <div className="flex items-center justify-between gap-3">
-                  <SectionHeading
-                    title="Available staff"
-                    description="Current availability"
-                    icon={UserCheck}
-                  />
-
-                  <span className="shrink-0 rounded-full bg-green-50 px-3 py-1 text-sm font-semibold text-green-700">
-                    {loading ? "—" : availableStaffCount}
-                  </span>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                  <span>Active staff</span>
-
-                  <span className="font-semibold text-slate-700">
-                    {loading ? "—" : activeStaffCount}
-                  </span>
-                </div>
-
-                {!loading && activeStaffCount > 0 && (
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-green-500 transition-all"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          (availableStaffCount / activeStaffCount) *
-                            100
-                        )}%`,
-                      }}
-                    />
+              <div className="mt-5 space-y-4">
+                {[
+                  {
+                    label: "Appointments",
+                    value: selectedAppointments.length,
+                  },
+                  {
+                    label: "Unique customers",
+                    value: selectedDayCustomerCount,
+                  },
+                  {
+                    label: "Scheduled value",
+                    value: formatCurrency(selectedScheduledValue),
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0 last:pb-0"
+                  >
+                    <span className="text-sm text-slate-500">{item.label}</span>
+                    <span className="font-bold text-slate-900">
+                      {item.value}
+                    </span>
                   </div>
-                )}
+                ))}
               </div>
 
-              {loading ? (
-                <div className="space-y-3 p-5">
-                  {[1, 2, 3].map((item) => (
-                    <div
-                      key={item}
-                      className="h-12 animate-pulse rounded-lg bg-slate-50"
-                    />
-                  ))}
-                </div>
-              ) : availableStaff.length === 0 ? (
-                <div className="px-5 py-8 text-center">
-                  <Users
-                    size={24}
-                    className="mx-auto text-slate-300"
+              <p className="mt-5 text-xs leading-5 text-slate-400">
+                Demo appointments are illustrative. Scheduled value does not
+                necessarily represent money collected.
+              </p>
+            </Card>
+
+            <Card className="overflow-hidden">
+              <div className="p-5">
+                <SectionTitle
+                  icon={UserCheck}
+                  title="Available Staff"
+                  subtitle="Staff with no appointments scheduled today"
+                  action={
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                      {loading ? "—" : availableStaffCount}
+                    </span>
+                  }
+                />
+
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all"
+                    style={{
+                      width: `${
+                        activeStaffCount
+                          ? Math.min(
+                              100,
+                              (availableStaffCount / activeStaffCount) * 100
+                            )
+                          : 0
+                      }%`,
+                    }}
                   />
-
-                  <p className="mt-3 text-sm font-medium text-slate-700">
-                    No available staff
-                  </p>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    No staff members are currently reported as available.
-                  </p>
                 </div>
-              ) : (
+
+                <p className="mt-2 text-right text-xs text-slate-400">
+                  {availableStaffCount} of {activeStaffCount} active staff
+                </p>
+              </div>
+
+              {availableStaff.length > 0 ? (
                 <div className="divide-y divide-slate-100">
-                  {availableStaff.map((staffMember) => (
+                  {availableStaff.slice(0, 4).map((staffMember) => (
                     <div
                       key={staffMember.id}
                       className="flex items-center gap-3 px-5 py-3"
                     >
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[#1e9be0]">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
                         <UserRound size={18} />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-slate-800">
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold">
                           {staffMember.name}
                         </p>
-
-                        <p className="mt-1 flex items-center gap-1.5 text-xs text-green-600">
-                          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                          Available
+                        <p className="mt-0.5 text-xs text-emerald-600">
+                          No appointments today
                         </p>
                       </div>
                     </div>
                   ))}
                 </div>
+              ) : (
+                <div className="px-5 pb-5">
+                  {loading ? (
+                    <div className="h-16 animate-pulse rounded-lg bg-slate-50" />
+                  ) : (
+                    <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                      No staff members without appointments today.
+                    </p>
+                  )}
+                </div>
               )}
 
-              <div className="border-t border-slate-100 px-5 py-3">
+              <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-3">
                 <Link
                   href="/admin/staff"
-                  className="text-sm font-semibold text-[#1e9be0] hover:text-blue-700"
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-800"
                 >
                   Manage staff →
                 </Link>
               </div>
-            </section>
+            </Card>
+          </div>
 
-            {/* UPCOMING APPOINTMENTS */}
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-                <div>
-                  <h2 className="font-semibold">
-                    Coming up
-                  </h2>
+          {/* UPCOMING APPOINTMENTS */}
+          <Card className="overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+              <SectionTitle
+                icon={CalendarCheck}
+                title="Upcoming Appointments"
+                subtitle="Next scheduled bookings"
+              />
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    Upcoming appointments
-                  </p>
-                </div>
+              <Link
+                href="/admin/appointments"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-800 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+              >
+                View All <ArrowRight size={14} />
+              </Link>
+            </div>
 
-                <CalendarClock
-                  size={19}
-                  className="text-[#1e9be0]"
-                />
-              </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-162.5 text-left">
+                <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-5 py-3">Customer</th>
+                    <th className="px-5 py-3">Date & Time</th>
+                    <th className="px-5 py-3">Services</th>
+                    <th className="px-5 py-3">Staff</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Action</th>
+                  </tr>
+                </thead>
 
-              {loading ? (
-                <div className="space-y-3 p-5">
-                  {[1, 2, 3].map((item) => (
-                    <div
-                      key={item}
-                      className="h-16 animate-pulse rounded-lg bg-slate-50"
-                    />
+                <tbody className="divide-y divide-slate-100">
+                  {upcomingAppointments.map((appointment) => (
+                    <tr key={appointment.id} className="hover:bg-slate-50">
+                      <td className="px-5 py-3">
+                        <p className="whitespace-nowrap text-xs font-semibold">
+                          {appointment.customer}
+                        </p>
+                        <p className="mt-1 text-[10px] text-slate-400">
+                          {appointment.phone}
+                        </p>
+                      </td>
+
+                      <td className="whitespace-nowrap px-5 py-3 text-xs text-slate-600">
+                        {appointment.date === safeToday
+                          ? "Today"
+                          : appointment.date === addDays(safeToday, 1)
+                            ? "Tomorrow"
+                            : formatDate(appointment.date, {
+                                day: "numeric",
+                                month: "short",
+                              })}
+                        , {appointment.time}
+                      </td>
+
+                      <td className="px-5 py-3 text-xs text-slate-600">
+                        {appointment.services}
+                      </td>
+
+                      <td className="px-5 py-3 text-xs text-slate-600">
+                        {appointment.staff}
+                      </td>
+
+                      <td className="px-5 py-3">
+                        <StatusBadge status={appointment.status} />
+                      </td>
+
+                      <td className="px-5 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAppointment(appointment)}
+                          className="rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
                   ))}
-                </div>
-              ) : activeUpcomingAppointments.length === 0 ? (
-                <div className="px-5 py-8 text-center">
-                  <CalendarDays
-                    size={24}
-                    className="mx-auto text-slate-300"
-                  />
+                </tbody>
+              </table>
+            </div>
 
-                  <p className="mt-3 text-sm font-medium text-slate-700">
-                    Nothing upcoming
-                  </p>
+            <div className="border-t border-amber-100 bg-amber-50/60 px-5 py-3">
+              <p className="flex items-center gap-2 text-xs text-amber-800">
+                <AlertCircle size={14} />
+                Upcoming appointment rows currently use demo data.
+              </p>
+            </div>
+          </Card>
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    No upcoming appointments were returned.
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {activeUpcomingAppointments
-                    .slice(0, 5)
-                    .map((appointment) => (
-                      <AppointmentRow
-                        key={appointment.id}
-                        appointment={appointment}
-                        showDate
-                      />
-                    ))}
-                </div>
-              )}
-
-              <div className="border-t border-slate-100 px-5 py-3">
-                <Link
-                  href="/admin/appointments"
-                  className="text-sm font-semibold text-[#1e9be0] hover:text-blue-700"
-                >
-                  View all appointments →
-                </Link>
-              </div>
-            </section>
-          </aside>
-        </div>
-
-        {/* TOTAL CUSTOMERS */}
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                <Users size={21} />
-              </div>
+          {/* CUSTOMER OVERVIEW */}
+          <Card className="flex flex-col justify-between gap-5 p-5 sm:flex-row sm:items-center sm:p-6">
+            <div className="flex items-center gap-4">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                <Users size={23} />
+              </span>
 
               <div>
-                <h2 className="font-semibold">
-                  Customer overview
-                </h2>
-
+                <h2 className="font-bold">Customer Overview</h2>
                 <p className="mt-1 text-sm text-slate-500">
                   Total customers registered with your business.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-5 sm:justify-end">
-              <p className="text-3xl font-semibold">
-                {loading
-                  ? "—"
-                  : metrics.totalCustomers ?? 0}
+            <div className="flex items-center justify-between gap-4 sm:justify-end">
+              <p className="text-3xl font-bold">
+                {loading ? "—" : metrics.totalCustomers ?? 0}
               </p>
 
               <Link
                 href="/admin/customers"
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium transition hover:bg-slate-50"
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
-                View customers
-
-                <ArrowUpRight size={15} />
+                View Customers
               </Link>
             </div>
-          </div>
-        </section>
+          </Card>
 
-        {/* RECENT APPOINTMENTS */}
-        <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-5">
-            <div>
-              <h2 className="font-semibold">
-                Recent appointments
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Recently returned booking records.
-              </p>
-            </div>
-
-            <Link
-              href="/admin/appointments"
-              className="shrink-0 text-sm font-semibold text-[#1e9be0] hover:text-blue-700"
-            >
-              View all
-            </Link>
-          </div>
-
-          {loading ? (
-            <div className="space-y-4 p-5">
-              {[1, 2, 3].map((item) => (
-                <div
-                  key={item}
-                  className="h-20 animate-pulse rounded-xl bg-slate-50"
-                />
-              ))}
-            </div>
-          ) : recentAppointments.length === 0 ? (
-            <div className="px-5 py-10 text-center">
-              <CalendarDays
-                size={24}
-                className="mx-auto text-slate-300"
+          {/* RECENT APPOINTMENTS */}
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between gap-3 p-5">
+              <SectionTitle
+                icon={Clock3}
+                title="Recent Appointments"
+                subtitle="Latest booking activity"
               />
+              <Link
+                href="/admin/appointments"
+                className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+              >
+                View all
+              </Link>
+            </div>
 
-              <p className="mt-3 text-sm font-medium text-slate-700">
-                No recent appointments
+            <AppointmentTable
+              appointments={DEMO_APPOINTMENTS.slice(0, 3).map((appointment) => ({
+                ...appointment,
+                id: `recent-${appointment.id}`,
+              }))}
+              today={safeToday}
+              onView={setSelectedAppointment}
+            />
+
+            <div className="border-t border-amber-100 bg-amber-50/60 px-5 py-3">
+              <p className="flex items-center gap-2 text-xs text-amber-800">
+                <AlertCircle size={14} />
+                Recent appointment records are demo data for now.
               </p>
             </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {recentAppointments.map((appointment) => (
-                <AppointmentRow
-                  key={appointment.id}
-                  appointment={appointment}
-                  showDate
-                />
-              ))}
-            </div>
-          )}
-        </section>
+          </Card>
 
-        {/* FOOTER */}
-        <p className="mt-6 text-center text-xs text-slate-400">
-          Appointment dates and times are displayed in India Standard Time (IST).
-        </p>
-      </div>
-    </main>
+          <p className="pb-3 text-center text-xs text-slate-400">
+            Appointment times use India Standard Time (IST).
+          </p>
+        </div>
+      </main>
+
+      {/* DEMO APPOINTMENT DETAIL MODAL */}
+      {selectedAppointment && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/40 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSelectedAppointment(null);
+            }
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+                  Appointment Details
+                </p>
+                <h2 className="mt-1 text-xl font-bold">
+                  {selectedAppointment.customer ||
+                    selectedAppointment.customers?.name ||
+                    "Customer"}
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Close appointment details"
+                onClick={() => setSelectedAppointment(null)}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <CalendarDays className="text-blue-600" size={18} />
+                <div>
+                  <p className="text-xs text-slate-400">Time</p>
+                  <p className="text-sm font-semibold">
+                    {selectedAppointment.time ||
+                      formatTime(selectedAppointment.start_time)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Scissors className="text-blue-600" size={18} />
+                <div>
+                  <p className="text-xs text-slate-400">Services</p>
+                  <p className="text-sm font-semibold">
+                    {selectedAppointment.services ||
+                      "Service booking"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <UserRound className="text-blue-600" size={18} />
+                <div>
+                  <p className="text-xs text-slate-400">Staff</p>
+                  <p className="text-sm font-semibold">
+                    {selectedAppointment.staff || "Assigned staff"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Coins className="text-blue-600" size={18} />
+                <div>
+                  <p className="text-xs text-slate-400">Appointment value</p>
+                  <p className="text-sm font-semibold">
+                    {formatCurrency(
+                      selectedAppointment.amount ??
+                        selectedAppointment.total_amount
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-500">Status</span>
+                <StatusBadge status={selectedAppointment.status} />
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setSelectedAppointment(null)}
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50"
+              >
+                Close
+              </button>
+
+              {selectedAppointment.id &&
+                !String(selectedAppointment.id).startsWith("demo-") &&
+                !String(selectedAppointment.id).startsWith("recent-") &&
+                !String(selectedAppointment.id).startsWith("upcoming-") && (
+                  <Link
+                    href={`/admin/appointments/${selectedAppointment.id}`}
+                    className="flex-1 rounded-xl bg-blue-700 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-blue-800"
+                  >
+                    Open Appointment
+                  </Link>
+                )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
