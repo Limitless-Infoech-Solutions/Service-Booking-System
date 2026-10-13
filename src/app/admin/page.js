@@ -728,7 +728,7 @@ export default function AdminDashboard() {
       </aside>
 
       {/* MAIN AREA - Added w-full to ensure it fills the remaining space perfectly */}
-      <main className="min-h-screen w-full lg:pl-64">
+      <main className="min-h-screen w-full lg:pl-4">
         {/* HEADER */}
         <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
           <div className="flex min-h-20 items-center justify-between gap-4 px-4 sm:px-6 xl:px-8">
