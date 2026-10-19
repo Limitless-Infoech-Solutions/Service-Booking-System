@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
 export async function POST(request) {
   try {
     const body = await request.json();
     const { hold_id } = body;
+    const isAdminMode = body.admin_mode === true;
+    let bookingClient = supabase;
+    let adminContext = null;
+    if (isAdminMode) {
+      adminContext = await authorizeBusinessAdmin(request);
+      if (adminContext.error) return adminJson(adminContext, { error: adminContext.error }, { status: adminContext.status });
+      bookingClient = adminContext.supabase;
+    }
 
     if (!hold_id) {
       return NextResponse.json(
@@ -13,15 +22,25 @@ export async function POST(request) {
       );
     }
 
+    const expectedFlowCookie = `${isAdminMode ? "admin" : "customer"}:${hold_id}`;
+    if (request.cookies.get("booking_flow_hold")?.value !== expectedFlowCookie) {
+      return NextResponse.json(
+        { error: "Booking hold does not belong to this browser flow." },
+        { status: 404 }
+      );
+    }
+
     // Holds may outlive an admin change to a service, staff member, or
     // assignment. Revalidate the held items immediately before confirmation.
-    const { data: hold, error: holdError } = await supabase
+    const holdQuery = bookingClient
       .from("booking_holds")
       .select(
-        "id, business_id, status, expires_at, booking_hold_services(service_id, staff_id)"
+        "id, business_id, customer_id, status, expires_at, booking_hold_services(service_id, staff_id, start_time, end_time)"
       )
-      .eq("id", hold_id)
-      .maybeSingle();
+      .eq("id", hold_id);
+    const { data: hold, error: holdError } = await (isAdminMode
+      ? holdQuery.eq("business_id", adminContext.businessId)
+      : holdQuery).maybeSingle();
 
     if (holdError) throw holdError;
 
@@ -38,7 +57,28 @@ export async function POST(request) {
       new Date(hold.expires_at) <= new Date()
     ) {
       return NextResponse.json(
-        { error: "Booking hold is no longer active." },
+        { error: "Booking hold is no longer active or has expired.", code: "HOLD_EXPIRED" },
+        { status: 409 }
+      );
+    }
+
+    if (!hold.customer_id) {
+      return NextResponse.json(
+        { error: "A customer must be attached to the booking hold before confirmation.", code: "HOLD_CUSTOMER_MISSING" },
+        { status: 409 }
+      );
+    }
+
+    const { data: attachedCustomer, error: customerError } = await bookingClient
+      .from("customers")
+      .select("id")
+      .eq("id", hold.customer_id)
+      .eq("business_id", hold.business_id)
+      .maybeSingle();
+    if (customerError) throw customerError;
+    if (!attachedCustomer) {
+      return NextResponse.json(
+        { error: "The attached customer does not belong to this business." },
         { status: 409 }
       );
     }
@@ -59,7 +99,7 @@ export async function POST(request) {
     ];
     const staffIds = [...new Set(holdItems.map((item) => item.staff_id))];
 
-    const { data: eligibleServices, error: servicesError } = await supabase
+    const { data: eligibleServices, error: servicesError } = await bookingClient
       .from("services")
       .select("id")
       .eq("business_id", hold.business_id)
@@ -77,7 +117,7 @@ export async function POST(request) {
     }
 
     const { data: eligibleAssignments, error: assignmentsError } =
-      await supabase
+      await bookingClient
         .from("staff_services")
         .select(
           "service_id, staff_id, staff!staff_services_staff_business_fkey!inner(id, business_id, is_active, status)"
@@ -110,7 +150,7 @@ export async function POST(request) {
       );
     }
 
-    const { data: appointmentId, error } = await supabase.rpc(
+    const { data: appointmentId, error } = await bookingClient.rpc(
       "confirm_booking_hold",
       {
         p_hold_id: hold_id,
@@ -126,13 +166,39 @@ export async function POST(request) {
       );
     }
 
-    return NextResponse.json(
+    if (isAdminMode) {
+      const { data: savedAppointmentItems, error: savedAppointmentError } = await bookingClient
+        .from("appointment_services")
+        .select("service_id, staff_id, start_time, end_time, appointments!inner(business_id)")
+        .eq("appointment_id", appointmentId)
+        .eq("appointments.business_id", adminContext.businessId);
+      if (savedAppointmentError) throw savedAppointmentError;
+      const savedByService = new Map((savedAppointmentItems || []).map((item) => [item.service_id, item]));
+      const exactAssignmentsPersisted = holdItems.length === savedByService.size && holdItems.every((item) => {
+        const saved = savedByService.get(item.service_id);
+        return saved && saved.staff_id === item.staff_id &&
+          new Date(saved.start_time).getTime() === new Date(item.start_time).getTime() &&
+          new Date(saved.end_time).getTime() === new Date(item.end_time).getTime();
+      });
+      if (!exactAssignmentsPersisted) {
+        const responseBody = {
+          error: "The appointment was created, but the database did not preserve the exact staff assignment and service schedule from the hold.",
+          code: "CONFIRMED_ASSIGNMENT_MISMATCH",
+          appointment_id: appointmentId,
+        };
+        return adminJson(adminContext, responseBody, { status: 500 });
+      }
+    }
+
+    const response = adminContext ? adminJson(adminContext,
       {
         success: true,
         appointment_id: appointmentId,
       },
       { status: 200 }
-    );
+    ) : NextResponse.json({ success: true, appointment_id: appointmentId }, { status: 200 });
+    response.cookies.set("booking_flow_hold", "", { path: "/", maxAge: 0 });
+    return response;
   } catch (error) {
     console.error("Confirm appointment API error:", error);
 

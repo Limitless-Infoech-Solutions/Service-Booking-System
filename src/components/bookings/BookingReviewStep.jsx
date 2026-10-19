@@ -9,6 +9,9 @@ export default function BookingReviewStep({
   selectedTime,
   holdId,
   onContinue,
+  adminMode = false,
+  assignments = [],
+  isConfirming: isSubmitting = false,
 }) {
   const total = selectedServices.reduce(
     (sum, service) => sum + Number(service.price || 0) * (service.qty || 1),
@@ -78,6 +81,14 @@ const handleConfirmBooking = async () => {
     : "—";
 
   const firstName = customer?.name?.trim()?.split(" ")[0] || "there";
+  const assignmentByService = new Map(assignments.map((item) => [item.service_id, item]));
+  const appointmentEndTime = selectedTime
+    ? (() => {
+        const [hour, minute] = selectedTime.split(":").map(Number);
+        const end = new Date(2000, 0, 1, hour, minute + totalDuration);
+        return end.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+      })()
+    : "—";
 
   return (
     <div className="w-full">
@@ -89,13 +100,13 @@ const handleConfirmBooking = async () => {
           </p>
 
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-            {customer?.isExistingCustomer
+            {adminMode ? `Appointment for ${firstName}` : customer?.isExistingCustomer
               ? `Welcome back, ${firstName}!`
               : `Welcome, ${firstName}!`}
           </h1>
 
           <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500 sm:text-base">
-            Review your appointment details before continuing to payment.
+            {adminMode ? "Review the customer, service, and staff details before confirming." : "Review your appointment details before continuing to payment."}
           </p>
         </div>
 
@@ -122,6 +133,8 @@ const handleConfirmBooking = async () => {
                       {service.duration} min
                       {service.qty > 1 ? ` × ${service.qty}` : ""}
                     </p>
+                    {adminMode && <p className="mt-1 text-sm text-slate-600">Staff: {assignmentByService.get(service.id)?.staff_name || "Assignment not available"}</p>}
+                    {adminMode && assignmentByService.get(service.id)?.start_time && <p className="mt-1 text-xs text-slate-500">{new Date(assignmentByService.get(service.id).start_time).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}–{new Date(assignmentByService.get(service.id).end_time).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}</p>}
                   </div>
 
                   <p className="shrink-0 text-sm font-semibold text-slate-900">
@@ -131,6 +144,12 @@ const handleConfirmBooking = async () => {
               ))}
             </div>
           </div>
+
+          {adminMode && <div className="border-b border-black/5 px-5 py-5 sm:px-7">
+            <h2 className="text-sm font-semibold text-slate-900">Customer</h2>
+            <p className="mt-2 text-sm text-slate-700">{customer?.name || "—"}</p>
+            <p className="mt-1 text-sm text-slate-500">{customer?.phone || "—"}{customer?.email ? ` · ${customer.email}` : ""}</p>
+          </div>}
 
           {/* Date and time */}
           <div className="grid grid-cols-1 gap-5 border-b border-black/5 px-5 py-5 sm:grid-cols-2 sm:px-7">
@@ -161,7 +180,7 @@ const handleConfirmBooking = async () => {
                 </p>
 
                 <p className="mt-1 text-sm font-medium text-slate-900">
-                  {selectedTime || "—"}
+                  {selectedTime || "—"} {adminMode && selectedTime ? `– ${appointmentEndTime}` : ""}
                 </p>
               </div>
             </div>
@@ -193,9 +212,10 @@ const handleConfirmBooking = async () => {
 <button
   type="button"
   onClick={onContinue}
-  className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f6c945] hover:text-slate-900"
+  disabled={isSubmitting}
+  className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f6c945] hover:text-slate-900 disabled:opacity-50"
 >
-  Confirm Appointment
+  {isSubmitting ? "Confirming…" : "Confirm Appointment"}
   <ArrowRight size={17} />
 </button>
       </div>

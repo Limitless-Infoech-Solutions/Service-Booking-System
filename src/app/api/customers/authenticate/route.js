@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
 export async function POST(request) {
   try {
@@ -16,7 +17,19 @@ export async function POST(request) {
       );
     }
 
-    const {business_id: businessId, holdId, phone, name, email } = body;
+    const {business_id: requestedBusinessId, holdId, phone, name, email } = body;
+    const isAdminMode = body.admin_mode === true;
+    let businessId = requestedBusinessId;
+    let authClient = supabase;
+    let adminContext = null;
+    if (isAdminMode) {
+      adminContext = await authorizeBusinessAdmin(request);
+      if (adminContext.error) {
+        return adminJson(adminContext, { success: false, message: adminContext.error }, { status: adminContext.status });
+      }
+      businessId = adminContext.businessId;
+      authClient = adminContext.supabase;
+    }
 
     // --------------------------------------------------
     // PART 2 — Validate base required fields
@@ -31,6 +44,14 @@ export async function POST(request) {
       return NextResponse.json(
         { success: false, message: "Hold ID is required." },
         { status: 400 }
+      );
+    }
+
+    const expectedFlowCookie = `${isAdminMode ? "admin" : "customer"}:${holdId}`;
+    if (request.cookies.get("booking_flow_hold")?.value !== expectedFlowCookie) {
+      return NextResponse.json(
+        { success: false, message: "Booking hold does not belong to this browser flow." },
+        { status: 404 }
       );
     }
 
@@ -68,8 +89,7 @@ export async function POST(request) {
     // --------------------------------------------------
     // PART 4 — Verify booking hold and expiration
     // --------------------------------------------------
-    const { data: hold, error: holdError } = await supabase
-      .from("booking_holds")
+    const { data: hold, error: holdError } = await authClient.from("booking_holds")
       .select("id, business_id, customer_id, expires_at, status")
       .eq("id", holdId)
       .eq("business_id", businessId)
@@ -102,6 +122,7 @@ export async function POST(request) {
         {
           success: false,
           message: "Your booking hold has expired. Please select the time again.",
+          code: "HOLD_EXPIRED",
         },
         { status: 409 }
       );
@@ -111,8 +132,7 @@ export async function POST(request) {
     // PART 5 — Look up existing customer by phone
     // --------------------------------------------------
     const { data: existingCustomer, error: customerLookupError } =
-      await supabase
-        .from("customers")
+      await authClient.from("customers")
         .select("id, name, phone, email")
         .eq("phone", normalizedPhone)
         .eq("business_id", businessId)
@@ -144,8 +164,7 @@ export async function POST(request) {
       }
 
       const { data: newCustomer, error: createCustomerError } =
-  await supabase
-    .from("customers")
+  await authClient.from("customers")
     .upsert(
       {
         business_id: businessId,
@@ -180,8 +199,7 @@ customer = newCustomer;
     // --------------------------------------------------
     // PART 7 — Attach customer to booking hold
     // --------------------------------------------------
-    const { data: updatedHold, error: updateHoldError } = await supabase
-      .from("booking_holds")
+    const { data: updatedHold, error: updateHoldError } = await authClient.from("booking_holds")
       .update({ customer_id: customer.id })
       .eq("id", holdId)
       .eq("status", "active")
@@ -200,11 +218,12 @@ customer = newCustomer;
     // --------------------------------------------------
     // SUCCESS
     // --------------------------------------------------
-    return NextResponse.json({
+    const authResponse = {
       success: true,
       customer,
       hold: updatedHold,
-    });
+    };
+    return adminContext ? adminJson(adminContext, authResponse) : NextResponse.json(authResponse);
   } catch (error) {
     console.error("Hold customer API error:", error);
     return NextResponse.json(

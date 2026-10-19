@@ -78,9 +78,13 @@ function getTimeSection(time) {
 export default function DateTimeStep({
   selectedDate,
   selectedTime,
+  selectedSlot,
+  preserveSelectedTime = false,
   onSelectDate,
   onSelectTime,
   serviceIds,
+  adminMode = false,
+  onAssignmentOptionsChange,
 }) {
   const today = useMemo(
     () => startOfDay(new Date()),
@@ -118,7 +122,7 @@ export default function DateTimeStep({
         selectedDate.getMonth() + 1
       ).padStart(2, "0")}-${String(selectedDate.getDate()).padStart(2, "0")}`
     : "";
-  const availabilityKey = `${BUSINESS_ID}|${selectedDateString}|${serviceIdsKey}`;
+  const availabilityKey = `${adminMode ? "admin" : BUSINESS_ID}|${selectedDateString}|${serviceIdsKey}`;
   const currentAvailability =
     availability.key === availabilityKey ? availability : null;
   const loadingSlots =
@@ -192,10 +196,11 @@ export default function DateTimeStep({
     async function fetchAvailability() {
       try {
         const params = new URLSearchParams({
-          business_id: BUSINESS_ID,
           date: selectedDateString,
           services: serviceIdsKey,
         });
+        if (adminMode) params.set("mode", "admin");
+        else params.set("business_id", BUSINESS_ID);
         const response = await fetch(
           `/api/services/availability?${params.toString()}`,
           { signal: controller.signal }
@@ -236,18 +241,52 @@ export default function DateTimeStep({
 
     fetchAvailability();
     return () => controller.abort();
-  }, [availabilityKey, retryCount, selectedDateString, serviceIdsKey]);
+  }, [adminMode, availabilityKey, retryCount, selectedDateString, serviceIdsKey]);
+
+  useEffect(() => {
+    if (!adminMode || !selectedDateString || !serviceIdsKey || !selectedTime) {
+      onAssignmentOptionsChange?.({ loading: false, options: [], error: "" });
+      return undefined;
+    }
+    const controller = new AbortController();
+    onAssignmentOptionsChange?.({ loading: true, options: [], error: "" });
+    async function fetchAssignmentOptions() {
+      try {
+        const params = new URLSearchParams({
+          mode: "admin",
+          date: selectedDateString,
+          services: serviceIdsKey,
+          time: selectedTime,
+        });
+        const response = await fetch(`/api/services/availability?${params.toString()}`, { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Unable to verify admin access or load staff availability.");
+        onAssignmentOptionsChange?.({ loading: false, options: data.staffAvailability || [], error: "" });
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        onAssignmentOptionsChange?.({ loading: false, options: [], error: error.message || "Unable to load staff availability." });
+      }
+    }
+    fetchAssignmentOptions();
+    return () => controller.abort();
+  }, [adminMode, availabilityKey, onAssignmentOptionsChange, selectedTime, selectedDateString, serviceIdsKey]);
 
   // This check is separate from fetching, so changing time never refetches.
   useEffect(() => {
     if (
       currentAvailability?.status === "success" &&
       selectedTime &&
-      !currentAvailability.slots.some((slot) => slot.time === selectedTime)
+      !currentAvailability.slots.some((slot) => slot.time === selectedTime) &&
+      !preserveSelectedTime
     ) {
       onSelectTime(null);
+      return;
     }
-  }, [currentAvailability, onSelectTime, selectedTime]);
+    if (currentAvailability?.status === "success" && selectedTime && !selectedSlot?.time) {
+      const matchingSlot = currentAvailability.slots.find((slot) => slot.time === selectedTime);
+      if (matchingSlot) onSelectTime(selectedTime, matchingSlot);
+    }
+  }, [currentAvailability, onSelectTime, preserveSelectedTime, selectedSlot, selectedTime]);
   // if the user is selecting time before 5 hrs then 
   const isOnlineBookingCutoff = useMemo(() => {
     if (!selectedDate || !isSameDay(selectedDate, today)) {
@@ -533,7 +572,8 @@ export default function DateTimeStep({
                           onClick={() => {
                             if (isAvailable) {
                               onSelectTime(
-                                slot.time
+                                slot.time,
+                                slot
                               );
                             }
                           }}
