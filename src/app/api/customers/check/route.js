@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
 
 
@@ -32,6 +33,8 @@ function normalizeIndianPhone(input) {
 }
 
 export async function POST(request) {
+  let adminContext = null;
+  let respond = (body, init) => NextResponse.json(body, init);
   try {
     let body;
     try {
@@ -43,7 +46,24 @@ export async function POST(request) {
       );
     }
 
-    const businessId = body?.business_id;
+    let businessId = body?.business_id;
+    let customerClient = supabase;
+    const adminBusinessContext = request.cookies.get("admin_booking_business")?.value;
+    if (adminBusinessContext) {
+      adminContext = await authorizeBusinessAdmin(request, adminBusinessContext);
+      if (adminContext.error) {
+        const response = adminJson(adminContext, { success: false, message: adminContext.error }, { status: adminContext.status });
+        response.cookies.set("admin_booking_business", "", { path: "/", maxAge: 0 });
+        return response;
+      }
+      businessId = adminContext.businessId;
+      customerClient = adminContext.supabase;
+      respond = (body, init) => {
+        const response = adminJson(adminContext, body, init);
+        response.cookies.set("admin_booking_business", "", { path: "/", maxAge: 0 });
+        return response;
+      };
+    }
     const normalizedPhone = normalizeIndianPhone(body?.phone);
     if (!businessId) {
       return NextResponse.json(
@@ -66,7 +86,7 @@ export async function POST(request) {
     }
 
     // Query database using the standardized "91XXXXXXXXXX" format
-    const { data: customer, error } = await supabase
+    const { data: customer, error } = await customerClient
       .from("customers")
       .select("id, name, phone, email")
       .eq("phone", normalizedPhone)
@@ -82,17 +102,19 @@ export async function POST(request) {
     }
 
     if (!customer) {
-      return NextResponse.json({
+      const responseBody = {
         success: true,
         exists: false,
-      });
+      };
+      return respond(responseBody);
     }
 
-    return NextResponse.json({
+    const responseBody = {
       success: true,
       exists: true,
       customer,
-    });
+    };
+    return respond(responseBody);
   } catch (error) {
     console.error("Customer check API error:", error);
     return NextResponse.json(

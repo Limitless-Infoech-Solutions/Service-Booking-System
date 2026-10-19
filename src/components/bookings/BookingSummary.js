@@ -12,10 +12,11 @@ import {
   Users,
   ShieldCheck,
   Gift,
+  X,
   ChevronRight,
 } from "lucide-react";
 
-import { DISCOUNT_THRESHOLD, computeBookingTotals } from "@/data/pricing";
+import { computeBookingTotals } from "@/data/pricing";
 
 export default function BookingSummary({
   selectedServices,
@@ -30,12 +31,10 @@ export default function BookingSummary({
     itemCount,
     totalDuration,
     subtotal,
-    qualifiesForDiscount,
-    discount,
     total,
   } = computeBookingTotals(selectedServices);
 
-  const servicesToGo = Math.max(0, DISCOUNT_THRESHOLD - itemCount);
+
 
   return (
     <>
@@ -85,6 +84,14 @@ export default function BookingSummary({
                   className="overflow-hidden"
                 >
                   <div className="relative mb-3 flex gap-3 rounded-xl bg-[#f8f7f4] p-3">
+                    <button
+                      type="button"
+                      onClick={() => onRemove(service.id)}
+                      aria-label={`Remove ${service.name}`}
+                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500"
+                    >
+                      <X size={14} />
+                    </button>
                     <div className="relative h-17 w-17 shrink-0 overflow-hidden rounded-lg">
                       <Image
                         src={service.image}
@@ -165,22 +172,10 @@ export default function BookingSummary({
           <div className="mt-4 border-t border-black/10 p-5">
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-500">Subtotal</span>
-              <span className="font-medium text-slate-800">
-                ₹{subtotal}
-              </span>
+              <span className="font-medium text-slate-800">₹{subtotal}</span>
             </div>
 
-            <div className="mt-2 flex items-center justify-between text-sm">
-              <span className="text-slate-500">Discount</span>
-
-              <span
-                className={`font-medium ${
-                  discount > 0 ? "text-emerald-600" : "text-slate-400"
-                }`}
-              >
-                {discount > 0 ? `- ₹${discount}` : "₹0"}
-              </span>
-            </div>
+        
 
             <div className="mt-4 flex items-center justify-between border-t border-black/10 pt-4">
               <span className="text-base font-semibold text-slate-900">
@@ -192,28 +187,7 @@ export default function BookingSummary({
               </span>
             </div>
 
-            {/* Savings */}
-            {qualifiesForDiscount ? (
-              <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3">
-                <p className="text-sm font-medium text-emerald-700">
-                  You&apos;re saving ₹{discount}!
-                </p>
-
-                <p className="mt-0.5 text-xs text-emerald-600">
-                  Keep going, you deserve it!
-                </p>
-              </div>
-            ) : (
-              itemCount > 0 && (
-                <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3">
-                  <p className="text-sm font-medium text-amber-700">
-                    Add {servicesToGo} more{" "}
-                    {servicesToGo === 1 ? "service" : "services"} to unlock
-                    10% off
-                  </p>
-                </div>
-              )
-            )}
+          
 
             {/* Continue */}
             <button
@@ -238,11 +212,7 @@ export default function BookingSummary({
               </div>
 
               <div className="flex flex-col items-center gap-1.5">
-                <Users
-                  size={16}
-                  strokeWidth={1.8}
-                  className="text-slate-500"
-                />
+                <Users size={16} strokeWidth={1.8} className="text-slate-500" />
                 <span className="text-[11px] leading-tight text-slate-500">
                   Expert
                   <br />

@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
 export async function GET(request, { params }) {
   try {
-   
+    const isAdminMode = new URL(request.url).searchParams.get("mode") === "admin";
+    let appointmentClient = supabase;
+    let adminContext = null;
+    if (isAdminMode) {
+      adminContext = await authorizeBusinessAdmin(request);
+      if (adminContext.error) return adminJson(adminContext, { success: false, error: adminContext.error }, { status: adminContext.status });
+      appointmentClient = adminContext.supabase;
+    }
     const { appointment_id } = await params;
 
-    const { data: appointment, error } = await supabase
+    let appointmentQuery = appointmentClient
       .from("appointments")
       .select(`
         id,
@@ -39,13 +47,14 @@ export async function GET(request, { params }) {
   email
 )
       `)
-      .eq("id", appointment_id)
-      .single();
+      .eq("id", appointment_id);
+    if (isAdminMode) appointmentQuery = appointmentQuery.eq("business_id", adminContext.businessId);
+    const { data: appointment, error } = await appointmentQuery.single();
 
       if (error) {
         console.error("Fetch appointment error:", error);
       
-        return NextResponse.json(
+        return adminContext ? adminJson(adminContext,
           {
             success: false,
             error: error.message,
@@ -54,13 +63,36 @@ export async function GET(request, { params }) {
             code: error.code,
           },
           { status: 500 }
-        );
+        ) : NextResponse.json({ success: false, error: error.message, details: error.details, hint: error.hint, code: error.code }, { status: 500 });
       }
 
-    return NextResponse.json({
+    let appointmentResponse = appointment;
+    if (isAdminMode && appointment.appointment_services?.length) {
+      const staffIds = [...new Set(appointment.appointment_services.map((item) => item.staff_id).filter(Boolean))];
+      let staffRows = [];
+      if (staffIds.length) {
+        const { data, error: staffError } = await appointmentClient
+          .from("staff")
+          .select("id, name")
+          .eq("business_id", adminContext.businessId)
+          .in("id", staffIds);
+        if (staffError) throw staffError;
+        staffRows = data || [];
+      }
+      const staffById = new Map((staffRows || []).map((staff) => [staff.id, staff]));
+      appointmentResponse = {
+        ...appointment,
+        appointment_services: appointment.appointment_services.map((item) => ({
+          ...item,
+          staff: staffById.get(item.staff_id) || null,
+        })),
+      };
+    }
+    const responseBody = {
       success: true,
-      appointment,
-    });
+      appointment: appointmentResponse,
+    };
+    return adminContext ? adminJson(adminContext, responseBody) : NextResponse.json(responseBody);
   } catch (error) {
     console.error("Appointment API error:", error);
 

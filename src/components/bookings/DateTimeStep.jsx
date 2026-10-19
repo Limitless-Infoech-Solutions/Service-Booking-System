@@ -10,6 +10,7 @@ import {
 import { BUSINESS_ID } from "@/lib/business";
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const ONLINE_BOOKING_CUTOFF_HOURS = 5;
+const EMPTY_SLOTS = [];
 function startOfDay(date) {
   const copy = new Date(date);
   copy.setHours(0, 0, 0, 0);
@@ -102,13 +103,36 @@ export default function DateTimeStep({
   //   status: "available",
   //   allocationType: "single_staff"
   // }
-  const [slots, setSlots] = useState([]);
-  const [businessHours, setBusinessHours] = useState(null);
-  const [loadingSlots, setLoadingSlots] =
-    useState(false);
+  const [availability, setAvailability] = useState({
+    key: "",
+    status: "idle",
+    slots: [],
+    businessHours: null,
+    error: "",
+  });
+  const [retryCount, setRetryCount] = useState(0);
 
-  const [availabilityError, setAvailabilityError] =
-    useState("");
+  const serviceIdsKey = (serviceIds || []).join(",");
+  const selectedDateString = selectedDate
+    ? `${selectedDate.getFullYear()}-${String(
+        selectedDate.getMonth() + 1
+      ).padStart(2, "0")}-${String(selectedDate.getDate()).padStart(2, "0")}`
+    : "";
+  const availabilityKey = `${BUSINESS_ID}|${selectedDateString}|${serviceIdsKey}`;
+  const currentAvailability =
+    availability.key === availabilityKey ? availability : null;
+  const loadingSlots =
+    Boolean(selectedDate && serviceIdsKey) &&
+    (!currentAvailability || currentAvailability.status === "loading");
+  const availabilityError =
+    currentAvailability?.status === "error"
+      ? currentAvailability.error
+      : "";
+  const slots =
+    currentAvailability?.status === "success"
+      ? currentAvailability.slots
+      : EMPTY_SLOTS;
+  const businessHours = currentAvailability?.businessHours || null;
 
   const monthGrid = useMemo(
     () =>
@@ -161,100 +185,69 @@ export default function DateTimeStep({
   // -----------------------------------------
 
   useEffect(() => {
-    if (!selectedDate || !serviceIds?.length) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSlots([]);
-      return;
-    }
+    if (!selectedDateString || !serviceIdsKey) return undefined;
+
+    const controller = new AbortController();
 
     async function fetchAvailability() {
-      setLoadingSlots(true);
-      setAvailabilityError("");
-      setSlots([]);
-
-      const year = selectedDate.getFullYear();
-
-      const month = String(
-        selectedDate.getMonth() + 1
-      ).padStart(2, "0");
-
-      const day = String(
-        selectedDate.getDate()
-      ).padStart(2, "0");
-
-      const dateString = `${year}-${month}-${day}`;
-
       try {
-        const response = await fetch(
-          `/api/services/availability?business_id=${BUSINESS_ID}&date=${dateString}&services=${serviceIds.join(",")}`
-        );
-
-        const data = await response.json();
-        console.log("FULL AVAILABILITY RESPONSE:", data);
-        const returnedBusinessHours = data?.businessHours;
-
-setBusinessHours(returnedBusinessHours || null);
-
-
-        console.log("Availability response:", {
-          status: response.status,
-          ok: response.ok,
-          data,
+        const params = new URLSearchParams({
+          business_id: BUSINESS_ID,
+          date: selectedDateString,
+          services: serviceIdsKey,
         });
+        const response = await fetch(
+          `/api/services/availability?${params.toString()}`,
+          { signal: controller.signal }
+        );
+        const data = await response.json();
 
         if (!response.ok) {
           throw new Error(
-            data.error ||
-              "Unable to load available times."
+            data.error || "Unable to load available times."
           );
         }
-        
 
         const apiSlots = (data?.availableSlots || []).map((slot) => ({
           ...slot,
           status: "available",
         }));
-        
-        setSlots(apiSlots);
-        
-       
-        // Only AVAILABLE slots can remain selected.
-        const selectedSlotStillAvailable =
-          apiSlots.some(
-            (slot) =>
-              slot.time === selectedTime &&
-              slot.status === "available"
-          );
 
-        if (
-          selectedTime &&
-          !selectedSlotStillAvailable
-        ) {
-          onSelectTime(null);
-        }
+        setAvailability({
+          key: availabilityKey,
+          status: "success",
+          slots: apiSlots,
+          businessHours: data?.businessHours || null,
+          error: "",
+        });
       } catch (error) {
-        console.error(
-          "Availability error:",
-          error
-        );
+        if (error.name === "AbortError") return;
 
-        setAvailabilityError(
-          "Unable to load available times. Please try again."
-        );
-
-        setSlots([]);
-      } finally {
-        setLoadingSlots(false);
+        console.error("Availability error:", error);
+        setAvailability({
+          key: availabilityKey,
+          status: "error",
+          slots: [],
+          businessHours: null,
+          error: "Unable to load available times. Please try again.",
+        });
       }
     }
 
     fetchAvailability();
-  }, [
-    selectedDate,
-    serviceIds,
-    selectedTime,
-    onSelectTime,
-  ]);
+    return () => controller.abort();
+  }, [availabilityKey, retryCount, selectedDateString, serviceIdsKey]);
+
+  // This check is separate from fetching, so changing time never refetches.
+  useEffect(() => {
+    if (
+      currentAvailability?.status === "success" &&
+      selectedTime &&
+      !currentAvailability.slots.some((slot) => slot.time === selectedTime)
+    ) {
+      onSelectTime(null);
+    }
+  }, [currentAvailability, onSelectTime, selectedTime]);
   // if the user is selecting time before 5 hrs then 
   const isOnlineBookingCutoff = useMemo(() => {
     if (!selectedDate || !isSameDay(selectedDate, today)) {
@@ -460,27 +453,37 @@ setBusinessHours(returnedBusinessHours || null);
               </p>
             </div>
           ) : loadingSlots ? (
-            <div className="mt-5 space-y-5">
-              <div className="rounded-xl border border-black/10 px-4 py-5">
-                <div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
-
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {Array.from({ length: 9 }).map(
-                    (_, index) => (
-                      <div
-                        key={index}
-                        className="h-10 animate-pulse rounded-xl bg-slate-100"
-                      />
-                    )
-                  )}
-                </div>
-              </div>
+            <div
+              className="mt-5 flex min-h-40 items-center justify-center rounded-xl border border-dashed border-black/10 bg-slate-50/60 px-4 py-8"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="flex items-center gap-3 text-sm font-medium text-slate-600">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#6862b5]/25 border-t-[#6862b5]" />
+                Checking available times...
+              </span>
             </div>
           ) : availabilityError ? (
-            <div className="mt-5 rounded-xl border border-dashed border-red-200 bg-red-50 px-4 py-8 text-center sm:py-10">
+            <div className="mt-5 rounded-xl border border-dashed border-red-200 bg-red-50 px-4 py-8 text-center sm:py-10" role="alert">
               <p className="text-sm font-medium text-red-600">
                 {availabilityError}
               </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setAvailability({
+                    key: availabilityKey,
+                    status: "loading",
+                    slots: [],
+                    businessHours: null,
+                    error: "",
+                  });
+                  setRetryCount((count) => count + 1);
+                }}
+                className="mt-3 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100"
+              >
+                Retry
+              </button>
             </div>
             ) : isOnlineBookingCutoff ? (
               <div className="mt-5 rounded-xl border border-dashed border-black/10 px-4 py-8 text-center sm:py-10">
@@ -497,12 +500,11 @@ setBusinessHours(returnedBusinessHours || null);
           ) : timeSections.length === 0 ? (
             <div className="mt-5 rounded-xl border border-dashed border-black/10 px-4 py-8 text-center sm:py-10">
               <p className="text-sm font-medium text-slate-600">
-                <b>It&apos;s a Weekend!</b> <br />
-                No time slots available
+                No available times for this date.
               </p>
 
               <p className="mt-1 text-xs text-slate-400">
-                Please choose another date.
+                Please choose another date or try again later.
               </p>
             </div>
           ) : (

@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
-
 export default function EditServicePage() {
   const { service_id } = useParams();
   const router = useRouter();
@@ -28,7 +26,7 @@ export default function EditServicePage() {
     async function fetchService() {
       try {
         const response = await fetch(
-          `/api/admin/services?business_id=${BUSINESS_ID}`
+          "/api/admin/services"
         );
 
         const data = await response.json();
@@ -89,7 +87,6 @@ export default function EditServicePage() {
         },
         body: JSON.stringify({
           id: service_id,
-          business_id: BUSINESS_ID,
           name: form.name,
           description: form.description,
           price: Number(form.price),

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
-const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
 const TIME_ZONE = "Asia/Kolkata";
 
 function getDateInIST(date = new Date()) {
@@ -25,7 +24,13 @@ function getISTDayBounds(dateString) {
   };
 }
 
-export async function GET() {
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const context = await authorizeBusinessAdmin(request, searchParams.get("business_id") || undefined);
+  if (context.error) {
+    return adminJson(context, { error: context.error }, { status: context.status });
+  }
+
   try {
     // 1. Get today's date and IST boundaries
     const today = getDateInIST();
@@ -33,10 +38,10 @@ export async function GET() {
 
     // 2. Fetch appointments scheduled for today
     const { data: appointments, error: appointmentsError } =
-      await supabase
+      await context.supabase
         .from("appointments")
         .select("id, status, total_amount, start_time")
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", context.businessId)
         .gte("start_time", todayBounds.start)
         .lt("start_time", todayBounds.end)
         .order("start_time", { ascending: true });
@@ -74,19 +79,19 @@ export async function GET() {
 
     // 7. Get total registered customers
     const { count: totalCustomers, error: customersError } =
-      await supabase
+      await context.supabase
         .from("customers")
         .select("id", { count: "exact", head: true })
-        .eq("business_id", BUSINESS_ID);
+        .eq("business_id", context.businessId);
 
     if (customersError) throw customersError;
 
     // 8. Get customers registered today
     const { count: newCustomersToday, error: newCustomersError } =
-      await supabase
+      await context.supabase
         .from("customers")
         .select("id", { count: "exact", head: true })
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", context.businessId)
         .gte("created_at", todayBounds.start)
         .lt("created_at", todayBounds.end);
 
@@ -94,10 +99,10 @@ export async function GET() {
 
     // 9. Get all active staff
     const { data: activeStaffMembers, error: staffError } =
-      await supabase
+      await context.supabase
         .from("staff")
         .select("id, name")
-        .eq("business_id", BUSINESS_ID)
+        .eq("business_id", context.businessId)
         .eq("is_active", true);
 
     if (staffError) throw staffError;
@@ -120,7 +125,7 @@ export async function GET() {
 
     if (scheduledAppointmentIds.length > 0) {
       const { data: assignments, error: assignmentsError } =
-        await supabase
+        await context.supabase
           .from("appointment_services")
           .select("staff_id")
           .in("appointment_id", scheduledAppointmentIds);
@@ -144,7 +149,7 @@ export async function GET() {
     );
 
     // 13. Return dashboard metrics
-    return NextResponse.json({
+    return adminJson(context, {
       date: today,
 
       metrics: {

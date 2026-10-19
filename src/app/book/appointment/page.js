@@ -89,6 +89,8 @@ export default function AppointmentPage() {
   
   const [searchQuery, setSearchQuery] = useState("");
 
+  
+
   // ==================================================
   // STEP 2 — DATE / TIME / BOOKING HOLD
   // ==================================================
@@ -187,6 +189,7 @@ export default function AppointmentPage() {
   // ==================================================
 
   const handleSelectService = (service) => {
+    console.log("Selected service:", service);
     setSelectedServices((current) => {
       const alreadySelected = current.some((item) => item.id === service.id);
 
@@ -194,11 +197,11 @@ export default function AppointmentPage() {
         return current.filter((item) => item.id !== service.id);
       }
 
-      return [
+      return [   
         ...current,
         {
           ...service,
-          qty: 1,
+          
         },
       ];
     });

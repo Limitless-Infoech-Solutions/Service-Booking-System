@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 
-export default function AdminLoginModal({ onClose }) {
+export default function AdminLoginModal({ onClose, returnTo = "/admin" }) {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -30,16 +30,10 @@ export default function AdminLoginModal({ onClose }) {
     setError("");
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabaseBrowser.auth.signInWithPassword({
       email,
       password,
     });
-    console.log("LOGIN SESSION:", data.session);
-    console.log(
-      "ACCESS TOKEN:",
-      data.session?.access_token ? "exists" : "missing"
-    );
-
     if (error) {
       setError("Invalid email or password.");
       setLoading(false);
@@ -48,7 +42,7 @@ export default function AdminLoginModal({ onClose }) {
 
     const user = data.user;
 
-    const { data: admin, error: adminError } = await supabase
+    const { data: admin, error: adminError } = await supabaseBrowser
       .from("business_admins")
       .select("business_id, role, is_active")
       .eq("user_id", user.id)
@@ -56,16 +50,14 @@ export default function AdminLoginModal({ onClose }) {
       .single();
 
     if (adminError || !admin) {
-      await supabase.auth.signOut();
+      await supabaseBrowser.auth.signOut();
 
       setError("You do not have admin access.");
       setLoading(false);
       return;
     }
 
-    console.log("Admin:", admin);
-
-    router.push("/admin");
+    router.push(returnTo);
   }
 
   const inputClass =

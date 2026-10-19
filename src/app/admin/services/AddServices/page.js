@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { LoaderCircle } from "lucide-react";
 
-const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
-
-export default function AddServicePage() {
+function AddServiceForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const staffId = searchParams.get("staff_id");
+  const requestedReturnTo = searchParams.get("return_to");
+  const returnTo = requestedReturnTo?.startsWith("/admin/staff/")
+    ? requestedReturnTo
+    : staffId
+      ? "/admin/staff"
+      : "/admin/services";
 
   const [form, setForm] = useState({
     name: "",
@@ -22,6 +29,7 @@ export default function AddServicePage() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [createdServiceId, setCreatedServiceId] = useState(null);
 
   function handleChange(event) {
     const { name, value, type, checked } = event.target;
@@ -39,13 +47,17 @@ export default function AddServicePage() {
       setSaving(true);
       setError("");
 
+      if (createdServiceId) {
+        await assignCreatedService(createdServiceId);
+        return;
+      }
+
       const response = await fetch("/api/admin/services", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          business_id: BUSINESS_ID,
           name: form.name,
           description: form.description,
           price: Number(form.price),
@@ -67,7 +79,12 @@ export default function AddServicePage() {
         throw new Error(data.error || "Failed to create service");
       }
 
-      router.push("/admin/services");
+      setCreatedServiceId(data.service?.id || null);
+      if (staffId && data.service?.id) {
+        await assignCreatedService(data.service.id);
+      } else {
+        router.push(returnTo);
+      }
     } catch (error) {
       console.error("Create service error:", error);
       setError(error.message);
@@ -76,12 +93,31 @@ export default function AddServicePage() {
     }
   }
 
+  async function assignCreatedService(serviceId) {
+    const response = await fetch(
+      `/api/admin/staff/${encodeURIComponent(staffId)}/services`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ service_id: serviceId }),
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        `Service created, but it could not be assigned to this staff member: ${result.error || "Please retry."}`
+      );
+    }
+    router.push(returnTo);
+    router.refresh();
+  }
+
   return (
     <main className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Add Service</h1>
         <p className="mt-1 text-gray-500">
-          Create a new service for your business.
+          Create a new service for your business.{staffId ? " It will be assigned to the selected staff member." : ""}
         </p>
       </div>
 
@@ -238,7 +274,7 @@ export default function AddServicePage() {
         <div className="flex gap-3">
           <button
             type="button"
-            onClick={() => router.push("/admin/services")}
+            onClick={() => router.push(returnTo)}
             className="rounded-lg border px-4 py-2"
           >
             Cancel
@@ -249,10 +285,18 @@ export default function AddServicePage() {
             disabled={saving}
             className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
           >
-            {saving ? "Creating..." : "Create Service"}
+            {saving ? "Creating..." : createdServiceId ? "Retry Assignment" : "Create Service"}
           </button>
         </div>
       </form>
     </main>
+  );
+}
+
+export default function AddServicePage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><LoaderCircle className="animate-spin text-[#1e9be0]" /></div>}>
+      <AddServiceForm />
+    </Suspense>
   );
 }

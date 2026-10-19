@@ -4,8 +4,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
-
 export default function ServiceStaffPage() {
   const { service_id } = useParams();
   const router = useRouter();
@@ -24,7 +22,7 @@ export default function ServiceStaffPage() {
         setError("");
 
         const response = await fetch(
-          `/api/admin/staff?business_id=${BUSINESS_ID}`
+          "/api/admin/staff?active=active&all=true"
         );
 
         const data = await response.json();

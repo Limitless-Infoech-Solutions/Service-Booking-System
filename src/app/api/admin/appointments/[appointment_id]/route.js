@@ -1,18 +1,22 @@
-import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
 export async function GET(request, { params }) {
+  const context = await authorizeBusinessAdmin(request);
+  if (context.error) {
+    return adminJson(context, { error: context.error }, { status: context.status });
+  }
+
   try {
     const { appointment_id } = await params;
 
     if (!appointment_id) {
-      return NextResponse.json(
+      return adminJson(context,
         { error: "Appointment ID is required" },
         { status: 400 }
       );
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await context.supabase
       .from("appointments")
       .select(`
         id,
@@ -54,31 +58,32 @@ export async function GET(request, { params }) {
         )
       `)
       .eq("id", appointment_id)
-      .single();
+      .eq("business_id", context.businessId)
+      .maybeSingle();
 
     if (error) {
       console.error("Appointment details API error:", error);
 
-      return NextResponse.json(
-        { error: error.message },
+      return adminJson(context,
+        { error: "Failed to load appointment." },
         { status: 500 }
       );
     }
 
     if (!data) {
-      return NextResponse.json(
+      return adminJson(context,
         { error: "Appointment not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({
+    return adminJson(context, {
       appointment: data,
     });
   } catch (error) {
     console.error("Unexpected error:", error);
 
-    return NextResponse.json(
+    return adminJson(context,
       { error: "Something went wrong" },
       { status: 500 }
     );

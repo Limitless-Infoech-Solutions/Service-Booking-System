@@ -1,20 +1,17 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
 
-    const businessId = searchParams.get("business_id");
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: "business_id is required" },
-        { status: 400 }
-      );
+    const requestedBusinessId = searchParams.get("business_id");
+    const context = await authorizeBusinessAdmin(request, requestedBusinessId || undefined);
+    if (context.error) {
+      return adminJson(context, { error: context.error }, { status: context.status });
     }
 
-    const { data: customers, error } = await supabase
+    const { data: customers, error } = await context.supabase
       .from("customers")
       .select(`
         id,
@@ -24,7 +21,7 @@ export async function GET(request) {
         created_at,
         updated_at
       `)
-      .eq("business_id", businessId)
+      .eq("business_id", context.businessId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -36,7 +33,7 @@ export async function GET(request) {
       );
     }
 
-    return NextResponse.json({
+    return adminJson(context, {
       customers,
       total: customers.length,
     });

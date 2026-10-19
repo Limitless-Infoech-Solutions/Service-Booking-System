@@ -1,23 +1,19 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
 
-    const businessId = searchParams.get("business_id");
+    const requestedBusinessId = searchParams.get("business_id");
+    const context = await authorizeBusinessAdmin(request, requestedBusinessId || undefined);
+    if (context.error) {
+      return adminJson(context, { error: context.error }, { status: context.status });
+    }
+    const businessId = context.businessId;
     let date = searchParams.get("date");
 
     // Business ID is required.
-    if (!businessId) {
-      return NextResponse.json(
-        {
-          error: "business_id is required",
-        },
-        { status: 400 }
-      );
-    }
-
     // Default to today's date in India if no date is provided.
     if (!date) {
       const dateParts = new Intl.DateTimeFormat("en-CA", {
@@ -68,7 +64,7 @@ export async function GET(request) {
       startOfDay.getTime() + 24 * 60 * 60 * 1000
     );
 
-    const { data, error } = await supabase
+    const { data, error } = await context.supabase
       .from("appointments")
       .select(`
         id,
@@ -99,7 +95,7 @@ export async function GET(request) {
       );
     }
 
-    return NextResponse.json({
+      return adminJson(context, {
       date,
       appointments: data,
       total: data.length,

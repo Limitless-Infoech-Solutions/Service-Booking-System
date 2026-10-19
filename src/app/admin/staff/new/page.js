@@ -13,8 +13,6 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
-
 // 1. Extract your main component logic into an inner component
 function NewStaffForm() {
   const router = useRouter();
@@ -40,7 +38,7 @@ function NewStaffForm() {
         setError("");
 
         const response = await fetch(
-          `/api/admin/services?business_id=${BUSINESS_ID}`
+          "/api/admin/services"
         );
 
         const result = await response.json();
@@ -121,7 +119,6 @@ function NewStaffForm() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          business_id: BUSINESS_ID,
           name: name.trim(),
           role: role.trim(),
           service_ids: selectedServiceIds,
@@ -137,7 +134,7 @@ function NewStaffForm() {
       if (initialServiceId) {
         router.push("/admin/services");
       } else {
-        router.push("/admin/staff/staff-list");
+        router.push("/admin/staff");
       }
 
       router.refresh();

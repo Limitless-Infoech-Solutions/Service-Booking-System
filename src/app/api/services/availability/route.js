@@ -335,6 +335,8 @@ export async function GET(request) {
         "id, duration_minutes, buffer_minutes" 
       ) 
       .eq("business_id", businessId)
+      .eq("is_active", true)
+      .eq("status", "completed")
       .in("id", serviceIds); 
  
     if (servicesError) { 
@@ -418,13 +420,14 @@ export async function GET(request) {
     } = await supabase 
       .from("staff_services") 
       .select(
-        "staff_id, service_id, staff!staff_services_staff_business_fkey(id, is_active, business_id)"
+        "staff_id, service_id, staff!staff_services_staff_business_fkey!inner(id, is_active, status, business_id)"
       )
       .eq("business_id", businessId)
       .in("service_id", serviceIds) 
      
       .eq("staff.business_id", businessId)
-      .eq("staff.is_active", true); 
+      .eq("staff.is_active", true)
+      .eq("staff.status", "completed");
  
     if (staffServicesError) { 
       console.error( 
@@ -498,6 +501,7 @@ export async function GET(request) {
       
       .eq("business_id", businessId)
       .eq("is_active", true) 
+      .eq("status", "completed")
       .in("id", eligibleStaffIds); 
  
     if (staffError) { 

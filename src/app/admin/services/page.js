@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
-
 export default function AdminServicesPage() {
   const router = useRouter();
 
@@ -29,7 +27,7 @@ export default function AdminServicesPage() {
       setError("");
 
       const response = await fetch(
-        `/api/admin/services?business_id=${BUSINESS_ID}`
+        "/api/admin/services"
       );
 
       const data = await response.json();
@@ -72,7 +70,6 @@ export default function AdminServicesPage() {
         },
         body: JSON.stringify({
           id: service.id,
-          business_id: BUSINESS_ID,
           name: service.name,
           description: service.description,
           price: service.price,
@@ -118,7 +115,7 @@ export default function AdminServicesPage() {
 
     try {
       const response = await fetch(
-        `/api/admin/staff?business_id=${BUSINESS_ID}`
+        "/api/admin/staff?active=active&all=true"
       );
 
       const data = await response.json();
@@ -167,7 +164,6 @@ export default function AdminServicesPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          business_id: BUSINESS_ID,
           service_id: selectedService.id,
           staff_ids: selectedStaffIds,
         }),

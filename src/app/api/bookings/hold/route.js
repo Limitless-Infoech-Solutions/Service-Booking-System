@@ -472,6 +472,8 @@ export async function POST(request) {
         "business_id",
         businessId
       )
+      .eq("is_active", true)
+      .eq("status", "completed")
       .in("id", serviceIds);
 
     if (servicesError) {
@@ -607,10 +609,11 @@ export async function POST(request) {
         `
         staff_id,
         service_id,
-        staff!staff_services_staff_business_fkey(
+        staff!staff_services_staff_business_fkey!inner(
           id,
           business_id,
-          is_active
+          is_active,
+          status
         )
         `
       )
@@ -629,6 +632,10 @@ export async function POST(request) {
       .eq(
         "staff.is_active",
         true
+      )
+      .eq(
+        "staff.status",
+        "completed"
       );
 
     if (staffServicesError) {
@@ -736,6 +743,10 @@ export async function POST(request) {
       .eq(
         "is_active",
         true
+      )
+      .eq(
+        "status",
+        "completed"
       )
       .in(
         "id",

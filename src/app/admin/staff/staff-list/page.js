@@ -3,346 +3,219 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-ArrowLeft,
-UserRound,
-UserPlus,
-Search,
-RefreshCw,
-LoaderCircle,
-Users,
-BriefcaseBusiness,
-CheckCircle2,
-Clock3,
-AlertCircle,
+  AlertCircle,
+  BriefcaseBusiness,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  LoaderCircle,
+  Pencil,
+  RefreshCw,
+  Search,
+  UserPlus,
+  UserRound,
+  Users,
 } from "lucide-react";
+import StaffServicesModal from "@/components/admin/StaffServicesModal";
 
-const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
+const PAGE_SIZE = 10;
 
 export default function StaffListPage() {
-const router = useRouter();
+  const router = useRouter();
+  const [staff, setStaff] = useState([]);
+  const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [completionFilter, setCompletionFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ page: 1, total: 0, total_pages: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [updatingId, setUpdatingId] = useState(null);
+  const [selectedStaff, setSelectedStaff] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-const [staff, setStaff] = useState([]);
-const [search, setSearch] = useState("");
-const [loading, setLoading] = useState(true);
-const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const query = new URLSearchParams({
+          page: String(page),
+          per_page: String(PAGE_SIZE),
+          active: activeFilter,
+          status: completionFilter,
+        });
+        if (search.trim()) query.set("search", search.trim());
+        const response = await fetch(`/api/admin/staff?${query.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Failed to load staff.");
+        if (cancelled) return;
+        const resultPages = result.pagination?.total_pages || 0;
+        if ((resultPages > 0 && page > resultPages) || (resultPages === 0 && page > 1)) {
+          setPage(Math.max(1, resultPages));
+          return;
+        }
+        setStaff(result.staff || []);
+        setPagination(result.pagination || { page, total: 0, total_pages: 0 });
+        setActionError("");
+      } catch (loadError) {
+        if (!cancelled && loadError.name !== "AbortError") {
+          setError(loadError.message || "Unable to load staff.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 200);
 
-async function fetchStaff() {
-try {
-setLoading(true);
-setError("");
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [page, search, activeFilter, completionFilter, refreshKey]);
 
-
-  const response = await fetch(
-    `/api/admin/staff?business_id=${BUSINESS_ID}`,
-    { cache: "no-store" }
-  );
-
-  const result = await response.json();
-
-  if (!response.ok) {
-    throw new Error(result.error || "Failed to fetch staff.");
+  async function toggleActivation(member) {
+    const nextValue = !member.is_active;
+    setUpdatingId(member.id);
+    setActionError("");
+    try {
+      const response = await fetch(`/api/admin/staff/${encodeURIComponent(member.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: nextValue }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not update staff activation.");
+      setStaff((current) => current.map((item) => item.id === member.id
+        ? { ...item, ...result.staff }
+        : item));
+      setRefreshKey((current) => current + 1);
+    } catch (updateError) {
+      setActionError(updateError.message || "Could not update staff activation.");
+    } finally {
+      setUpdatingId(null);
+    }
   }
-  console.log("Staff API response:", result.staff);
-  setStaff(result.staff || []);
-} catch (err) {
-  console.error("Fetch staff error:", err);
-  setError(err.message || "Unable to load staff.");
-} finally {
-  setLoading(false);
-}
 
+  const totalPages = pagination.total_pages || 0;
 
-}
-
-useEffect(() => {
-// eslint-disable-next-line react-hooks/set-state-in-effect
-fetchStaff();
-}, []);
-
-const filteredStaff = staff.filter((member) => {
-const query = search.toLowerCase();
-
-
-return (
-  member.name?.toLowerCase().includes(query) ||
-  member.role?.toLowerCase().includes(query)
-);
-
-
-});
-
-return ( <div className="min-h-screen bg-[#f5f7fa] px-4 py-8 text-[#0b0e14] sm:px-8"> <div className="mx-auto max-w-7xl">
-{/* Header */}
-<button
-type="button"
-onClick={() => router.push("/admin/staff")}
-className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-gray-500 transition hover:text-[#1e9be0]"
-> <ArrowLeft size={17} />
-Back to Staff Management </button>
-
-
-    <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
-      <div>
-        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm">
-          <Users size={24} className="text-[#1e9be0]" />
-        </div>
-
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-          All Staff
-        </h1>
-
-        <p className="mt-2 text-sm text-gray-500 sm:text-base">
-          View your team members and their setup status.
-        </p>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => router.push("/admin/staff/new")}
-        className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0b0e14] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#1e9be0]"
-      >
-        <UserPlus size={18} />
-        Add Staff
-      </button>
-    </div>
-
-    {/* Summary */}
-    <div className="mb-6 grid gap-4 sm:grid-cols-2">
-      <div className="rounded-2xl border border-gray-200 bg-white p-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[#1e9be0]">
-            <Users size={20} />
-          </div>
-
+  return (
+    <main className="min-h-screen bg-[#f5f7fa] px-4 py-8 text-[#0b0e14] sm:px-8">
+      <div className="mx-auto max-w-7xl">
+        <header className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
           <div>
-            <p className="text-sm text-gray-500">Staff Loaded</p>
-            <p className="text-2xl font-bold">
-              {loading ? "—" : staff.length}
-            </p>
+            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm">
+              <Users size={24} className="text-[#1e9be0]" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Staff Management</h1>
+            <p className="mt-2 text-sm text-gray-500 sm:text-base">Manage staff, assignments, and booking eligibility.</p>
           </div>
-        </div>
-      </div>
+          <button type="button" onClick={() => router.push("/admin/staff/new")} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0b0e14] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#1e9be0]">
+            <UserPlus size={18} /> Add Staff
+          </button>
+        </header>
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-            <BriefcaseBusiness size={20} />
+        <section className="mb-6 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-2xl border border-gray-200 bg-white p-5">
+            <div className="flex items-center gap-3">
+              <Users size={20} className="text-[#1e9be0]" />
+              <div><p className="text-sm text-gray-500">Total staff</p><p className="text-2xl font-bold">{loading ? "—" : pagination.total}</p></div>
+            </div>
           </div>
-
-          <div>
-            <p className="text-sm text-gray-500">Matching Staff</p>
-            <p className="text-2xl font-bold">
-              {loading ? "—" : filteredStaff.length}
-            </p>
+          <div className="rounded-2xl border border-gray-200 bg-white p-5">
+            <div className="flex items-center gap-3">
+              <BriefcaseBusiness size={20} className="text-emerald-600" />
+              <div><p className="text-sm text-gray-500">Showing</p><p className="text-2xl font-bold">{loading ? "—" : staff.length} <span className="text-sm font-normal text-gray-500">on this page</span></p></div>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
+        </section>
 
-    {/* Search and Refresh */}
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row">
-      <div className="relative flex-1">
-        <Search
-          size={18}
-          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
-        />
+        <section className="mb-5 grid gap-3 rounded-2xl border border-gray-200 bg-white p-4 sm:grid-cols-[minmax(15rem,1fr)_12rem_13rem_auto]">
+          <label className="relative block">
+            <span className="sr-only">Search staff</span>
+            <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search by name or role..." className="w-full rounded-xl border border-gray-200 py-3 pl-10 pr-4 text-sm outline-none focus:border-[#1e9be0] focus:ring-2 focus:ring-blue-100" />
+          </label>
+          <label className="text-xs font-medium text-gray-500">
+            <span className="sr-only">Filter activation</span>
+            <select value={activeFilter} onChange={(event) => { setActiveFilter(event.target.value); setPage(1); }} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-700 outline-none focus:border-[#1e9be0]">
+              <option value="all">All activation states</option><option value="active">Active</option><option value="inactive">Inactive</option>
+            </select>
+          </label>
+          <label className="text-xs font-medium text-gray-500">
+            <span className="sr-only">Filter completion</span>
+            <select value={completionFilter} onChange={(event) => { setCompletionFilter(event.target.value); setPage(1); }} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-700 outline-none focus:border-[#1e9be0]">
+              <option value="all">All completion states</option><option value="completed">Completed</option><option value="incomplete">Incomplete</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => setRefreshKey((current) => current + 1)} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-50">
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Refresh
+          </button>
+        </section>
 
-        <input
-          type="text"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by staff name or role..."
-          className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm outline-none transition focus:border-[#1e9be0] focus:ring-2 focus:ring-blue-100"
-        />
-      </div>
+        {actionError && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{actionError}</div>}
+        {error && !loading && <div role="alert" className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><AlertCircle size={18} />{error}<button type="button" onClick={() => setRefreshKey((current) => current + 1)} className="ml-auto underline">Retry</button></div>}
 
-      <button
-        type="button"
-        onClick={fetchStaff}
-        disabled={loading}
-        className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium transition hover:bg-gray-50 disabled:opacity-50"
-      >
-        <RefreshCw
-          size={16}
-          className={loading ? "animate-spin" : ""}
-        />
-        Refresh
-      </button>
-    </div>
-
-    {/* Loading */}
-    {loading && (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white py-20">
-        <LoaderCircle
-          size={30}
-          className="animate-spin text-[#1e9be0]"
-        />
-        <p className="mt-4 text-sm text-gray-500">
-          Loading staff members...
-        </p>
-      </div>
-    )}
-
-    {/* Error */}
-    {!loading && error && (
-      <div
-        role="alert"
-        className="rounded-2xl border border-red-200 bg-red-50 p-6"
-      >
-        <div className="flex items-start gap-3 text-red-700">
-          <AlertCircle size={20} className="mt-0.5 shrink-0" />
-
-          <div>
-            <p className="font-semibold">
-              Could not load staff members
-            </p>
-            <p className="mt-1 text-sm">{error}</p>
-
-            <button
-              type="button"
-              onClick={fetchStaff}
-              className="mt-4 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-100"
-            >
-              Try Again
-            </button>
+        {loading ? (
+          <div className="flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white py-16 text-sm text-gray-500"><LoaderCircle size={23} className="animate-spin text-[#1e9be0]" /> Loading staff...</div>
+        ) : !error && staff.length === 0 ? (
+          <div className="rounded-2xl border border-gray-200 bg-white px-6 py-16 text-center">
+            <UserRound size={27} className="mx-auto text-gray-400" />
+            <h2 className="mt-4 font-semibold">{pagination.total ? "No staff match these filters" : "No staff members yet"}</h2>
+            <p className="mt-2 text-sm text-gray-500">Adjust your search or add a staff member.</p>
+            {!pagination.total && <button type="button" onClick={() => router.push("/admin/staff/new")} className="mt-5 rounded-xl bg-[#0b0e14] px-5 py-3 text-sm font-semibold text-white">Add Staff</button>}
           </div>
-        </div>
-      </div>
-    )}
-
-    {/* Empty State */}
-    {!loading && !error && staff.length === 0 && (
-      <div className="rounded-2xl border border-gray-200 bg-white px-6 py-16 text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-500">
-          <UserRound size={26} />
-        </div>
-
-        <h2 className="mt-5 text-lg font-semibold">
-          No staff members found
-        </h2>
-
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
-          Add your first team member to get started. You can assign
-          services now or do it later.
-        </p>
-
-        <button
-          type="button"
-          onClick={() => router.push("/admin/staff/new")}
-          className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#0b0e14] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#1e9be0]"
-        >
-          <UserPlus size={17} />
-          Create Staff
-        </button>
-      </div>
-    )}
-
-    {/* No Search Results */}
-    {!loading &&
-      !error &&
-      staff.length > 0 &&
-      filteredStaff.length === 0 && (
-        <div className="rounded-2xl border border-gray-200 bg-white px-6 py-14 text-center">
-          <Search size={28} className="mx-auto text-gray-400" />
-
-          <h2 className="mt-4 font-semibold">
-            No matching staff
-          </h2>
-
-          <p className="mt-2 text-sm text-gray-500">
-            Try a different name or role.
-          </p>
-        </div>
-      )}
-
-    {/* Staff Cards */}
-    {!loading && !error && filteredStaff.length > 0 && (
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {filteredStaff.map((member) => {
-          const isComplete = member.status === "completed";
-
-          return (
-            <article
-              key={member.id}
-              className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-6"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-[#1e9be0]">
-                    <UserRound size={23} />
+        ) : !error && (
+          <div className="space-y-3">
+            {staff.map((member) => {
+              const completed = member.status === "completed";
+              return (
+                <article key={member.id} className={`flex flex-col gap-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition sm:flex-row sm:items-center sm:justify-between ${member.is_active ? "" : "grayscale bg-gray-100 text-gray-500"}`}>
+                  <div className="flex min-w-0 items-start gap-4 sm:items-center">
+                    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${member.is_active ? "bg-blue-50 text-[#1e9be0]" : "bg-gray-200 text-gray-500"}`}><UserRound size={22} /></div>
+                    <div className="min-w-0">
+                      <button type="button" onClick={() => router.push(`/admin/staff/${encodeURIComponent(member.id)}`)} className="truncate text-left font-semibold hover:text-[#1e9be0]">{member.name}</button>
+                      <p className="mt-1 text-sm text-gray-500">{member.role || "No role specified"}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+                        <span className="inline-flex items-center gap-1.5"><BriefcaseBusiness size={14} />{member.assigned_services_count} {member.assigned_services_count === 1 ? "service" : "services"}</span>
+                        <span className={`inline-flex items-center gap-1.5 ${completed ? "text-emerald-700" : "text-amber-700"}`}>{completed ? <CheckCircle2 size={14} /> : <Clock3 size={14} />}{completed ? "Completed" : "Incomplete"}</span>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${member.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-200 text-gray-700"}`}>{member.is_active ? "Active" : "Inactive"}</span>
+                      </div>
+                    </div>
                   </div>
-
-                  <div className="min-w-0">
-                    <h2 className="truncate font-semibold">
-                      {member.name}
-                    </h2>
-
-                    <p className="mt-1 truncate text-sm text-gray-500">
-                      {member.role || "No role specified"}
-                    </p>
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <button type="button" onClick={() => router.push(`/admin/staff/${encodeURIComponent(member.id)}/edit`)} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium hover:bg-gray-50"><Pencil size={15} /> Edit</button>
+                    <button type="button" onClick={() => setSelectedStaff(member)} className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium hover:bg-gray-50">Manage Services</button>
+                    <button type="button" disabled={updatingId === member.id} onClick={() => toggleActivation(member)} className={`rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50 ${member.is_active ? "border border-gray-200 text-gray-700 hover:bg-gray-50" : "bg-[#0b0e14] text-white hover:bg-[#1e9be0]"}`}>
+                      {updatingId === member.id ? "Saving..." : member.is_active ? "Deactivate" : "Reactivate"}
+                    </button>
                   </div>
-                </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
 
-                <span
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-                    member.is_active
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-gray-100 text-gray-600"
-                  }`}
-                >
-                  {member.is_active ? "Active" : "Inactive"}
-                </span>
-              </div>
-
-              <div className="my-5 border-t border-gray-100" />
-
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-gray-500">
-                  Setup Status
-                </span>
-
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                    isComplete
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-amber-50 text-amber-700"
-                  }`}
-                >
-                  {isComplete ? (
-                    <CheckCircle2 size={14} />
-                  ) : (
-                    <Clock3 size={14} />
-                  )}
-
-{isComplete ? (
-  "Completed"
-) : (
-  <>
-    Incomplete,  <br />
-     Please Assign  <br />Service
-   
-    to this Staff
-  </>
-)}
-                </span>
-              </div>
-
-              <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-4">
-  <BriefcaseBusiness size={16} className="shrink-0 text-gray-400" />
-
-  <span className="text-sm text-gray-500">
-    {member.assigned_services_count}{" "}
-    {member.assigned_services_count === 1 ? "service" : "services"} assigned
-  </span>
-</div>
-            </article>
-          );
-        })}
+        {!loading && !error && pagination.total > 0 && (
+          <nav aria-label="Staff pagination" className="mt-5 flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-gray-500">Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, pagination.total)} of {pagination.total} staff</p>
+            <div className="flex items-center justify-between gap-3 sm:justify-end">
+              <span className="text-sm text-gray-600">Page {page} of {totalPages}</span>
+              <button type="button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:opacity-40"><ChevronLeft size={16} />Previous</button>
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage((current) => current + 1)} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:opacity-40">Next<ChevronRight size={16} /></button>
+            </div>
+          </nav>
+        )}
       </div>
-    )}
-  </div>
-</div>
 
-
-);
+      {selectedStaff && <StaffServicesModal staff={selectedStaff} returnTo="/admin/staff" onClose={() => setSelectedStaff(null)} onSaved={() => setRefreshKey((current) => current + 1)} />}
+    </main>
+  );
 }
