@@ -31,7 +31,6 @@ import {
   X,
 } from "lucide-react";
 
-const BUSINESS_ID = "5ce7f078-0115-4598-a534-4166eae92bbc";
 const TIME_ZONE = "Asia/Kolkata";
 
 // --------------------------------------------------
@@ -103,167 +102,47 @@ function formatCurrency(amount) {
   }).format(Number(amount) || 0);
 }
 
-function formatAppointmentDate(dateString, today) {
-  if (!dateString) return "—";
-
-  const date = new Date(dateString);
-  const appointmentDate = new Intl.DateTimeFormat("en-CA", {
+function getDatePartInIndia(dateString) {
+  if (!dateString) return "";
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone: TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(date);
+  }).format(new Date(dateString));
+}
 
-  const safeToday = today || getTodayInIndia();
+function formatDashboardAppointment(appointment) {
+  const serviceItems = appointment.appointment_services || [];
+  const serviceNames = [...new Set(
+    serviceItems.map((item) => item.services?.name).filter(Boolean)
+  )];
+  const staffNames = [...new Set(
+    serviceItems.map((item) => item.staff?.name).filter(Boolean)
+  )];
 
-  if (appointmentDate === safeToday) return "Today";
-  if (appointmentDate === addDays(safeToday, 1)) return "Tomorrow";
-
-  return new Intl.DateTimeFormat("en-IN", {
-    timeZone: TIME_ZONE,
-    day: "numeric",
-    month: "short",
-  }).format(date);
+  return {
+    ...appointment,
+    customer: appointment.customers?.name || "Customer",
+    phone: appointment.customers?.phone || "",
+    services: serviceNames.join(", ") || "Service booking",
+    staff: staffNames.join(", ") || "Unassigned",
+    amount: Number(appointment.total_amount || 0),
+    date: getDatePartInIndia(appointment.start_time),
+    time: formatTime(appointment.start_time),
+  };
 }
 
 function getStatusClasses(status) {
   const styles = {
     confirmed: "bg-emerald-50 text-emerald-700",
     completed: "bg-emerald-50 text-emerald-700",
-    pending: "bg-amber-50 text-amber-700",
     cancelled: "bg-rose-50 text-rose-700",
     no_show: "bg-slate-100 text-slate-600",
   };
 
   return styles[status] || "bg-blue-50 text-blue-700";
 }
-
-// --------------------------------------------------
-// DEMO DATA
-// Replace these records with real API data later.
-// --------------------------------------------------
-
-const DEMO_APPOINTMENTS = [
-  {
-    id: "demo-1",
-    time: "09:00 AM",
-    customer: "Priya Sharma",
-    phone: "+91 98765 43210",
-    services: "Haircut + Beard Trim",
-    staff: "Rohit",
-    status: "confirmed",
-    amount: 800,
-    dayOffset: 0,
-  },
-  {
-    id: "demo-2",
-    time: "10:30 AM",
-    customer: "Amit Verma",
-    phone: "+91 87654 32109",
-    services: "Hair Spa",
-    staff: "Neha",
-    status: "pending",
-    amount: 1200,
-    dayOffset: 0,
-  },
-  {
-    id: "demo-3",
-    time: "12:00 PM",
-    customer: "Sneha Patel",
-    phone: "+91 76543 21098",
-    services: "Facial",
-    staff: "Rohit",
-    status: "confirmed",
-    amount: 900,
-    dayOffset: 0,
-  },
-  {
-    id: "demo-4",
-    time: "02:00 PM",
-    customer: "Rahul Singh",
-    phone: "+91 65432 10987",
-    services: "Haircut",
-    staff: "Karan",
-    status: "completed",
-    amount: 500,
-    dayOffset: 0,
-  },
-  {
-    id: "demo-5",
-    time: "04:30 PM",
-    customer: "Anjali Mehta",
-    phone: "+91 98765 21098",
-    services: "Manicure + Pedicure",
-    staff: "Neha",
-    status: "confirmed",
-    amount: 1500,
-    dayOffset: 0,
-  },
-  {
-    id: "demo-6",
-    time: "06:00 PM",
-    customer: "Vikash Kumar",
-    phone: "+91 43210 98765",
-    services: "Beard Trim",
-    staff: "Karan",
-    status: "pending",
-    amount: 400,
-    dayOffset: 0,
-  },
-];
-
-const DEMO_UPCOMING = [
-  {
-    ...DEMO_APPOINTMENTS[1],
-    id: "upcoming-1",
-    time: "03:00 PM",
-    customer: "Neha Kapoor",
-    services: "Haircut + Hair Wash",
-    staff: "Rohit",
-    status: "confirmed",
-    dayOffset: 0,
-  },
-  {
-    ...DEMO_APPOINTMENTS[2],
-    id: "upcoming-2",
-    time: "04:30 PM",
-    customer: "Rohan Mehta",
-    services: "Beard Trim",
-    staff: "Karan",
-    status: "pending",
-    dayOffset: 0,
-  },
-  {
-    ...DEMO_APPOINTMENTS[0],
-    id: "upcoming-3",
-    time: "06:00 PM",
-    customer: "Simran Kaur",
-    services: "Facial",
-    staff: "Neha",
-    status: "confirmed",
-    dayOffset: 0,
-  },
-  {
-    ...DEMO_APPOINTMENTS[3],
-    id: "upcoming-4",
-    time: "10:00 AM",
-    customer: "Arjun Sharma",
-    services: "Haircut + Beard Trim",
-    staff: "Rohit",
-    status: "confirmed",
-    dayOffset: 1,
-  },
-  {
-    ...DEMO_APPOINTMENTS[4],
-    id: "upcoming-5",
-    time: "11:30 AM",
-    customer: "Pooja Singh",
-    services: "Hair Spa",
-    staff: "Neha",
-    status: "pending",
-    dayOffset: 1,
-  },
-];
 
 // --------------------------------------------------
 // REUSABLE COMPONENTS
@@ -357,24 +236,24 @@ function StatusBadge({ status }) {
   );
 }
 
-function AppointmentTable({ appointments, today, onView }) {
+function AppointmentTable({ appointments, loading = false }) {
   if (!appointments.length) {
     return (
       <div className="px-5 py-12 text-center">
         <CalendarDays className="mx-auto text-slate-300" size={28} />
         <p className="mt-3 text-sm font-semibold text-slate-700">
-          No appointments for this date
+          {loading ? "Loading appointments…" : "No appointments for this date"}
         </p>
-        <p className="mt-1 text-xs text-slate-400">
+        {!loading && <p className="mt-1 text-xs text-slate-400">
           Select another date or create a new appointment.
-        </p>
+        </p>}
       </div>
     );
   }
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-180t-left">
+      <table className="w-full min-w-180 text-left">
         <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
           <tr>
             <th className="px-4 py-3 font-semibold">Time</th>
@@ -422,24 +301,12 @@ function AppointmentTable({ appointments, today, onView }) {
               </td>
 
               <td className="px-4 py-3">
-                {appointment.id.startsWith("demo-") ||
-                appointment.id.startsWith("upcoming-") ||
-                appointment.id.startsWith("recent-") ? (
-                  <button
-                    type="button"
-                    onClick={() => onView(appointment)}
-                    className="rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
-                  >
-                    View
-                  </button>
-                ) : (
-                  <Link
-                    href={`/admin/appointments/${appointment.id}`}
-                    className="rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
-                  >
-                    View
-                  </Link>
-                )}
+                <Link
+                  href={`/admin/appointments/${appointment.id}`}
+                  className="rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                >
+                  View
+                </Link>
               </td>
             </tr>
           ))}
@@ -457,6 +324,9 @@ export default function AdminDashboard() {
   const [today, setToday] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [dashboardData, setDashboardData] = useState(null);
+  const [calendarAppointments, setCalendarAppointments] = useState([]);
+  const [calendarLoading, setCalendarLoading] = useState(true);
+  const [calendarError, setCalendarError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -479,7 +349,7 @@ export default function AdminDashboard() {
       setError("");
 
       const response = await fetch(
-        `/api/admin/dashboard?business_id=${BUSINESS_ID}`,
+        "/api/admin/dashboard",
         { cache: "no-store" }
       );
 
@@ -503,47 +373,49 @@ export default function AdminDashboard() {
     loadDashboard();
   }, [loadDashboard]);
 
+  const loadCalendar = useCallback(async () => {
+    if (!calendarMonth) return;
+
+    try {
+      setCalendarLoading(true);
+      setCalendarError("");
+      const response = await fetch(
+        `/api/admin/dashboard/calender?month=${encodeURIComponent(calendarMonth)}`,
+        { cache: "no-store" }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to load calendar.");
+      setCalendarAppointments(data.data?.appointments || []);
+    } catch (err) {
+      console.error("Dashboard calendar loading error:", err);
+      setCalendarError(err.message || "Unable to load calendar appointments.");
+      setCalendarAppointments([]);
+    } finally {
+      setCalendarLoading(false);
+    }
+  }, [calendarMonth]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadCalendar();
+  }, [loadCalendar]);
+
   const metrics = dashboardData?.metrics || {};
   const availableStaff = dashboardData?.data?.availableStaff || [];
-
-  // The API currently returns today's appointments only.
-  // Selected dates use demo records until a date-specific schedule API exists.
   const safeToday = today || getTodayInIndia();
-  const useDemoSchedule = selectedDate !== safeToday;
   const realAppointments = dashboardData?.data?.appointments || [];
-
-  const realSelectedAppointments =
-    !useDemoSchedule && realAppointments.length
-      ? realAppointments.map((appointment) => ({
-          ...appointment,
-          time: formatTime(appointment.start_time),
-        }))
-      : [];
-
-  const demoAppointments = DEMO_APPOINTMENTS.map((appointment) => ({
-    ...appointment,
-    date: addDays(safeToday, appointment.dayOffset),
-  }));
-
-  const selectedAppointments = useDemoSchedule
-    ? demoAppointments.filter((appointment) => appointment.date === selectedDate)
-    : realSelectedAppointments.length
-      ? realSelectedAppointments
-      : demoAppointments.filter((appointment) => appointment.date === selectedDate);
-
-  const upcomingAppointments = DEMO_UPCOMING.map((appointment) => ({
-    ...appointment,
-    date: addDays(safeToday, appointment.dayOffset),
-  }));
+  const selectedAppointments = calendarAppointments
+    .filter((appointment) => getDatePartInIndia(appointment.start_time) === selectedDate)
+    .map(formatDashboardAppointment);
+  const upcomingAppointments = (dashboardData?.data?.upcomingAppointments || [])
+    .map(formatDashboardAppointment);
+  const recentAppointments = (dashboardData?.data?.recentAppointments || [])
+    .map(formatDashboardAppointment);
 
   const activeStaffCount = Number(metrics.activeStaff ?? 0);
   const availableStaffCount = Number(
     metrics.availableStaffCount ?? availableStaff.length
   );
-
-  const pendingActions = realAppointments.filter(
-    (appointment) => appointment.status === "pending"
-  ).length;
 
   const selectedDayCustomerCount = new Set(
     selectedAppointments
@@ -563,10 +435,9 @@ export default function AdminDashboard() {
   );
 
   function changeDate(days) {
-    setSelectedDate((current) => {
-      const baseDate = current || safeToday;
-      return addDays(baseDate, days);
-    });
+    const nextDate = addDays(selectedDate || safeToday, days);
+    setSelectedDate(nextDate);
+    setCalendarMonth(nextDate.slice(0, 7));
   }
 
   function changeMonth(amount) {
@@ -595,10 +466,9 @@ export default function AdminDashboard() {
     ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
   ];
 
-  const demoDatesWithAppointments = new Set([
-    safeToday,
-    addDays(safeToday, 1),
-  ]);
+  const datesWithAppointments = new Set(
+    calendarAppointments.map((appointment) => getDatePartInIndia(appointment.start_time))
+  );
 
   const quickActions = [
     {
@@ -887,16 +757,7 @@ export default function AdminDashboard() {
                 value={formatCurrency(metrics.expectedRevenue ?? 0)}
                 icon={Coins}
                 iconColor="purple"
-                subtitle="Pending and confirmed bookings"
-                loading={loading}
-              />
-
-              <MetricCard
-                title="Pending Actions"
-                value={pendingActions}
-                icon={AlertCircle}
-                iconColor="orange"
-                subtitle="Pending appointments returned by API"
+                subtitle="Confirmed bookings"
                 loading={loading}
               />
 
@@ -974,8 +835,7 @@ export default function AdminDashboard() {
 
                   const isSelected = selectedDate === dateString;
                   const isToday = safeToday === dateString;
-                  const hasAppointments =
-                    demoDatesWithAppointments.has(dateString);
+                  const hasAppointments = datesWithAppointments.has(dateString);
 
                   return (
                     <button
@@ -991,7 +851,7 @@ export default function AdminDashboard() {
                       }`}
                     >
                       {day}
-                      {hasAppointments && !isSelected && (
+                      {hasAppointments && !isSelected && !calendarLoading && (
                         <span className="absolute bottom-1 h-1 w-1 rounded-full bg-emerald-500" />
                       )}
                     </button>
@@ -1010,7 +870,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  Demo appointments
+                  Appointments
                 </div>
               </div>
 
@@ -1026,7 +886,11 @@ export default function AdminDashboard() {
                   id="dashboard-date"
                   type="date"
                   value={selectedDate}
-                  onChange={(event) => setSelectedDate(event.target.value)}
+                  onChange={(event) => {
+                    const nextDate = event.target.value;
+                    setSelectedDate(nextDate);
+                    if (nextDate) setCalendarMonth(nextDate.slice(0, 7));
+                  }}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 />
 
@@ -1106,10 +970,24 @@ export default function AdminDashboard() {
                 </div>
               )}
 
+              {calendarError && (
+                <p role="alert" className="border-y border-rose-100 bg-rose-50 px-5 py-3 text-sm text-rose-700">
+                  {calendarError}
+                </p>
+              )}
+
               <AppointmentTable
-                appointments={selectedAppointments}
-                today={safeToday}
-                onView={setSelectedAppointment}
+                appointments={viewingWeek
+                  ? calendarAppointments
+                      .filter((appointment) => {
+                        const appointmentDate = getDatePartInIndia(appointment.start_time);
+                        const startDate = selectedDate || safeToday;
+                        const dayOffset = (new Date(`${appointmentDate}T12:00:00Z`) - new Date(`${startDate}T12:00:00Z`)) / 86400000;
+                        return dayOffset >= 0 && dayOffset < 7;
+                      })
+                      .map(formatDashboardAppointment)
+                  : selectedAppointments}
+                loading={calendarLoading}
               />
 
               <div className="border-t border-slate-100 px-5 py-3">
@@ -1160,8 +1038,7 @@ export default function AdminDashboard() {
               </div>
 
               <p className="mt-5 text-xs leading-5 text-slate-400">
-                Demo appointments are illustrative. Scheduled value does not
-                necessarily represent money collected.
+                Scheduled value is based on appointments in the selected date and does not represent money collected.
               </p>
             </Card>
 
@@ -1324,12 +1201,9 @@ export default function AdminDashboard() {
               </table>
             </div>
 
-            <div className="border-t border-amber-100 bg-amber-50/60 px-5 py-3">
-              <p className="flex items-center gap-2 text-xs text-amber-800">
-                <AlertCircle size={14} />
-                Upcoming appointment rows currently use demo data.
-              </p>
-            </div>
+            {upcomingAppointments.length === 0 && !loading && (
+              <p className="px-5 pb-5 text-sm text-slate-500">No upcoming appointments.</p>
+            )}
           </Card>
 
           {/* CUSTOMER OVERVIEW */}
@@ -1378,20 +1252,9 @@ export default function AdminDashboard() {
             </div>
 
             <AppointmentTable
-              appointments={DEMO_APPOINTMENTS.slice(0, 3).map((appointment) => ({
-                ...appointment,
-                id: `recent-${appointment.id}`,
-              }))}
-              today={safeToday}
-              onView={setSelectedAppointment}
+              appointments={recentAppointments}
+              loading={loading}
             />
-
-            <div className="border-t border-amber-100 bg-amber-50/60 px-5 py-3">
-              <p className="flex items-center gap-2 text-xs text-amber-800">
-                <AlertCircle size={14} />
-                Recent appointment records are demo data for now.
-              </p>
-            </div>
           </Card>
 
           <p className="pb-3 text-center text-xs text-slate-400">
@@ -1400,7 +1263,7 @@ export default function AdminDashboard() {
         </div>
       </main>
 
-      {/* DEMO APPOINTMENT DETAIL MODAL */}
+      {/* APPOINTMENT DETAIL MODAL */}
       {selectedAppointment && (
         <div
           className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/40 p-4"
@@ -1494,10 +1357,7 @@ export default function AdminDashboard() {
                 Close
               </button>
 
-              {selectedAppointment.id &&
-                !String(selectedAppointment.id).startsWith("demo-") &&
-                !String(selectedAppointment.id).startsWith("recent-") &&
-                !String(selectedAppointment.id).startsWith("upcoming-") && (
+              {selectedAppointment.id && (
                   <Link
                     href={`/admin/appointments/${selectedAppointment.id}`}
                     className="flex-1 rounded-xl bg-blue-700 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-blue-800"

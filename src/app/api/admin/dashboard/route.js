@@ -3,6 +3,23 @@ import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
 const TIME_ZONE = "Asia/Kolkata";
 
+const APPOINTMENT_DETAILS = `
+  id,
+  customer_id,
+  status,
+  total_amount,
+  start_time,
+  end_time,
+  customers!appointments_customer_id_fkey (id, name, phone),
+  appointment_services (
+    id,
+    service_id,
+    staff_id,
+    services (id, name, duration_minutes),
+    staff (id, name)
+  )
+`;
+
 function getDateInIST(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: TIME_ZONE,
@@ -36,17 +53,39 @@ export async function GET(request) {
     const today = getDateInIST();
     const todayBounds = getISTDayBounds(today);
 
-    // 2. Fetch appointments scheduled for today
+    // 2. Fetch appointments scheduled for today with the details the dashboard displays.
     const { data: appointments, error: appointmentsError } =
       await context.supabase
         .from("appointments")
-        .select("id, status, total_amount, start_time")
+        .select(APPOINTMENT_DETAILS)
         .eq("business_id", context.businessId)
         .gte("start_time", todayBounds.start)
         .lt("start_time", todayBounds.end)
         .order("start_time", { ascending: true });
 
     if (appointmentsError) throw appointmentsError;
+
+    // 2a. Fetch the next five upcoming appointments.
+    const { data: upcomingAppointments, error: upcomingError } = await context.supabase
+      .from("appointments")
+      .select(APPOINTMENT_DETAILS)
+      .eq("business_id", context.businessId)
+      .eq("status", "confirmed")
+      .gte("start_time", new Date().toISOString())
+      .order("start_time", { ascending: true })
+      .limit(5);
+
+    if (upcomingError) throw upcomingError;
+
+    // 2b. Fetch the latest appointment activity for the recent list.
+    const { data: recentAppointments, error: recentError } = await context.supabase
+      .from("appointments")
+      .select(APPOINTMENT_DETAILS)
+      .eq("business_id", context.businessId)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (recentError) throw recentError;
 
     // 3. Exclude cancelled and no-show appointments
     const activeAppointments = (appointments || []).filter(
@@ -62,7 +101,7 @@ export async function GET(request) {
     // 5. Calculate expected revenue
     const expectedRevenue = activeAppointments
       .filter((appointment) =>
-        ["pending", "confirmed"].includes(appointment.status)
+        appointment.status === "confirmed"
       )
       .reduce(
         (total, appointment) =>
@@ -113,7 +152,7 @@ export async function GET(request) {
     // Cancelled and no-show appointments do not occupy staff.
     const scheduledAppointments = activeAppointments.filter(
       (appointment) =>
-        ["pending", "confirmed", "completed"].includes(appointment.status)
+        ["confirmed", "completed"].includes(appointment.status)
     );
 
     const scheduledAppointmentIds = scheduledAppointments.map(
@@ -169,6 +208,8 @@ export async function GET(request) {
         appointments: activeAppointments,
         completedAppointments,
         availableStaff,
+        upcomingAppointments: upcomingAppointments || [],
+        recentAppointments: recentAppointments || [],
       },
     });
   } catch (error) {

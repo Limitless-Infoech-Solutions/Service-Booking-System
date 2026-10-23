@@ -11,6 +11,7 @@ import {
   getBusinessDayOfWeek as getISTDayOfWeek,
   isValidBookingDate as isValidDate,
   getFreeIntervals,
+  getServiceIdsError,
 } from "@/lib/booking/scheduling";
 
 export async function GET(request) {
@@ -65,14 +66,10 @@ export async function GET(request) {
       .map((value) => value.trim())
       .filter(Boolean);
 
-    if (serviceIds.length === 0) {
-      return respond(
-        {
-          error: "service_ids must contain at least one service ID.",
-        },
-        { status: 400 }
-      );
-    }
+      const serviceIdsError = getServiceIdsError(serviceIds);
+      if (serviceIdsError) {
+        return respond({ error: serviceIdsError }, { status: 400 });
+      }
 
     const dayOfWeek = getISTDayOfWeek(date);
 
@@ -302,8 +299,7 @@ export async function GET(request) {
     );
 
     // 5. Add existing appointment blocks.
-    // Only pending and confirmed appointments
-    // consume staff capacity.
+    // Confirmed appointments consume staff capacity.
     const { data: appointmentItems, error: appointmentItemsError } =
       await bookingClient
         .from("appointment_services")
@@ -318,7 +314,7 @@ export async function GET(request) {
         )
         .in("staff_id", eligibleStaffIds)
         .eq("appointments.business_id", businessId)
-        .in("appointments.status", ["pending", "confirmed"])
+        .eq("appointments.status", "confirmed")
         .lt("start_time", queryWindowEndIso)
         .gt("end_time", queryWindowStartIso);
 
@@ -466,7 +462,7 @@ export async function GET(request) {
         candidateStartMs,
         staffByServiceMap,
         blockedIntervalsByStaff,
-        { enforceAdjacentBuffers: isAdminMode }
+        { enforceAdjacentBuffers: false }
       );
 
       if (!assignments) {
@@ -506,27 +502,7 @@ export async function GET(request) {
           })),
       });
     }
-    console.log("DEBUG businessId:", businessId);
-    console.log("DEBUG serviceIds:", serviceIds);
-    console.log("DEBUG servicesData:", servicesData);
-    console.log("DEBUG staffServicesData:", staffServicesData);
-    console.log("DEBUG eligibleStaffIds:", eligibleStaffIds);
-
-    console.log(
-      "DEBUG staffByServiceMap:",
-      Object.fromEntries(staffByServiceMap)
-    );
-
-    console.log("DEBUG staffList:", staffList);
-    console.log("DEBUG appointmentItems:", appointmentItems);
-    console.log("DEBUG holdItems:", holdItems);
-
-    console.log(
-      "DEBUG blockedIntervalsByStaff:",
-      Object.fromEntries(blockedIntervalsByStaff)
-    );
-
-    console.log("DEBUG availableSlots:", availableSlots);
+   //write console Statements here to check the result.
 
     const selectedSlotAvailable =
       requestedTime &&
@@ -553,7 +529,7 @@ export async function GET(request) {
                   assignmentWindowStartMs,
                   staffByServiceMap,
                   blockedIntervalsByStaff,
-                  { fixedStaffByService, enforceAdjacentBuffers: true }
+                  { fixedStaffByService, enforceAdjacentBuffers: false }
                 )
               );
             const allServiceAssignments = new Map(

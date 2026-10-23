@@ -76,7 +76,7 @@ export default function AppointmentDetailsPage({ params }) {
       return "bg-blue-50 text-blue-700 ring-1 ring-blue-200";
     if (s === "no_show" || s === "no-show")
       return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
-    // default: scheduled / pending
+    // default: scheduled appointment
     return "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
   }
 

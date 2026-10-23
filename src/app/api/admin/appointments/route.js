@@ -6,12 +6,31 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
 
     const requestedBusinessId = searchParams.get("business_id");
-    const context = await authorizeBusinessAdmin(request, requestedBusinessId || undefined);
+    const context = await authorizeBusinessAdmin(
+      request,
+      requestedBusinessId || undefined
+    );
     if (context.error) {
-      return adminJson(context, { error: context.error }, { status: context.status });
+      return adminJson(
+        context,
+        { error: context.error },
+        { status: context.status }
+      );
     }
     const businessId = context.businessId;
     let date = searchParams.get("date");
+    const status = searchParams.get("status") || "";
+    const search = (searchParams.get("search") || "")
+      .trim()
+      .toLocaleLowerCase("en-IN");
+    const validStatuses = ["confirmed", "completed", "cancelled", "no_show"];
+    if (status && !validStatuses.includes(status)) {
+      return adminJson(
+        context,
+        { error: "Invalid appointment status." },
+        { status: 400 }
+      );
+    }
 
     // Business ID is required.
     // Default to today's date in India if no date is provided.
@@ -60,42 +79,56 @@ export async function GET(request) {
     // Calculate the selected day's boundaries in India time.
     const startOfDay = new Date(`${date}T00:00:00+05:30`);
 
-    const startOfNextDay = new Date(
-      startOfDay.getTime() + 24 * 60 * 60 * 1000
-    );
+    const startOfNextDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
 
-    const { data, error } = await context.supabase
+    let query = context.supabase
       .from("appointments")
-      .select(`
+      .select(
+        `
         id,
         customer_id,
         start_time,
         end_time,
         status,
         total_amount,
+        appointment_services (
+          staff_id,
+          staff (id, name)
+        ),
         customers!appointments_customer_id_fkey (
           id,
           name,
           phone
         )
-      `)
+      `
+      )
       .eq("business_id", businessId)
       .gte("start_time", startOfDay.toISOString())
       .lt("start_time", startOfNextDay.toISOString())
       .order("start_time", { ascending: true });
 
+    if (status) query = query.eq("status", status);
+
+    const { data: appointmentRows, error } = await query;
+
     if (error) {
       console.error("Appointments API error:", error);
 
-      return NextResponse.json(
-        {
-          error: error.message,
-        },
+      return adminJson(
+        context,
+        { error: "Failed to load appointments." },
         { status: 500 }
       );
     }
 
-      return adminJson(context, {
+    const data = (appointmentRows || []).filter((appointment) => {
+      if (!search) return true;
+      const name = appointment.customers?.name || "";
+      const phone = appointment.customers?.phone || "";
+      return `${name} ${phone}`.toLocaleLowerCase("en-IN").includes(search);
+    });
+
+    return adminJson(context, {
       date,
       appointments: data,
       total: data.length,

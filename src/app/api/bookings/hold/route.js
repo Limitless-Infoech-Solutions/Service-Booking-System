@@ -11,6 +11,7 @@ import {
   getBusinessEpochMs as getISTEpochMs,
   getBusinessDayOfWeek as getISTDayOfWeek,
   isValidBookingDate as isValidDate,
+  getServiceIdsError,
 } from "@/lib/booking/scheduling";
 
 const HOLD_DURATION_MINUTES = 5;
@@ -171,24 +172,10 @@ export async function POST(request) {
       );
     }
 
-    if (!Array.isArray(serviceIds)) {
-      return NextResponse.json(
-        {
-          error: "service_ids must be an array.",
-        },
-        { status: 400 }
-      );
+    const serviceIdsError = getServiceIdsError(serviceIds);
+    if (serviceIdsError) {
+      return NextResponse.json({ error: serviceIdsError }, { status: 400 });
     }
-
-    if (serviceIds.length === 0) {
-      return NextResponse.json(
-        {
-          error: "At least one service is required.",
-        },
-        { status: 400 }
-      );
-    }
-
     if (!isValidDate(date)) {
       return NextResponse.json(
         {
@@ -669,7 +656,7 @@ export async function POST(request) {
         )
         .in("staff_id", eligibleStaffIds)
         .eq("appointments.business_id", businessId)
-        .in("appointments.status", ["pending", "confirmed"])
+        .eq("appointments.status", "confirmed")
         .lt("start_time", queryWindowEndIso)
         .gt("end_time", queryWindowStartIso);
 
@@ -817,7 +804,7 @@ export async function POST(request) {
       requestedStartMs,
       staffByServiceMap,
       blockedIntervalsByStaff,
-      { fixedStaffByService, enforceAdjacentBuffers: Boolean(isAdminMode) }
+      { fixedStaffByService, enforceAdjacentBuffers: false }
     );
 
     if (!assignments) {
