@@ -4,19 +4,26 @@ import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 
 export async function GET(request, { params }) {
   try {
-    const isAdminMode = new URL(request.url).searchParams.get("mode") === "admin";
+    const isAdminMode =
+      new URL(request.url).searchParams.get("mode") === "admin";
     let appointmentClient = supabase;
     let adminContext = null;
     if (isAdminMode) {
       adminContext = await authorizeBusinessAdmin(request);
-      if (adminContext.error) return adminJson(adminContext, { success: false, error: adminContext.error }, { status: adminContext.status });
+      if (adminContext.error)
+        return adminJson(
+          adminContext,
+          { success: false, error: adminContext.error },
+          { status: adminContext.status }
+        );
       appointmentClient = adminContext.supabase;
     }
     const { appointment_id } = await params;
 
     let appointmentQuery = appointmentClient
       .from("appointments")
-      .select(`
+      .select(
+        `
         id,
         business_id,
         customer_id,
@@ -46,29 +53,52 @@ export async function GET(request, { params }) {
   phone,
   email
 )
-      `)
+      `
+      )
       .eq("id", appointment_id);
-    if (isAdminMode) appointmentQuery = appointmentQuery.eq("business_id", adminContext.businessId);
+    if (isAdminMode)
+      appointmentQuery = appointmentQuery.eq(
+        "business_id",
+        adminContext.businessId
+      );
     const { data: appointment, error } = await appointmentQuery.single();
 
-      if (error) {
-        console.error("Fetch appointment error:", error);
-      
-        return adminContext ? adminJson(adminContext,
-          {
-            success: false,
-            error: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code,
-          },
-          { status: 500 }
-        ) : NextResponse.json({ success: false, error: error.message, details: error.details, hint: error.hint, code: error.code }, { status: 500 });
-      }
+    if (error) {
+      console.error("Fetch appointment error:", error);
+
+      return adminContext
+        ? adminJson(
+            adminContext,
+            {
+              success: false,
+              error: error.message,
+              details: error.details,
+              hint: error.hint,
+              code: error.code,
+            },
+            { status: 500 }
+          )
+        : NextResponse.json(
+            {
+              success: false,
+              error: error.message,
+              details: error.details,
+              hint: error.hint,
+              code: error.code,
+            },
+            { status: 500 }
+          );
+    }
 
     let appointmentResponse = appointment;
     if (isAdminMode && appointment.appointment_services?.length) {
-      const staffIds = [...new Set(appointment.appointment_services.map((item) => item.staff_id).filter(Boolean))];
+      const staffIds = [
+        ...new Set(
+          appointment.appointment_services
+            .map((item) => item.staff_id)
+            .filter(Boolean)
+        ),
+      ];
       let staffRows = [];
       if (staffIds.length) {
         const { data, error: staffError } = await appointmentClient
@@ -79,7 +109,9 @@ export async function GET(request, { params }) {
         if (staffError) throw staffError;
         staffRows = data || [];
       }
-      const staffById = new Map((staffRows || []).map((staff) => [staff.id, staff]));
+      const staffById = new Map(
+        (staffRows || []).map((staff) => [staff.id, staff])
+      );
       appointmentResponse = {
         ...appointment,
         appointment_services: appointment.appointment_services.map((item) => ({
@@ -92,7 +124,9 @@ export async function GET(request, { params }) {
       success: true,
       appointment: appointmentResponse,
     };
-    return adminContext ? adminJson(adminContext, responseBody) : NextResponse.json(responseBody);
+    return adminContext
+      ? adminJson(adminContext, responseBody)
+      : NextResponse.json(responseBody);
   } catch (error) {
     console.error("Appointment API error:", error);
 

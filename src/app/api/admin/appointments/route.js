@@ -23,7 +23,14 @@ export async function GET(request) {
     const search = (searchParams.get("search") || "")
       .trim()
       .toLocaleLowerCase("en-IN");
-    const validStatuses = ["confirmed", "completed", "cancelled", "no_show"];
+    const validStatuses = [
+      "confirmed",
+      "arrived",
+      "in_service",
+      "completed",
+      "cancelled",
+      "no_show",
+    ];
     if (status && !validStatuses.includes(status)) {
       return adminJson(
         context,

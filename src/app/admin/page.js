@@ -400,6 +400,15 @@ export default function AdminDashboard() {
     loadCalendar();
   }, [loadCalendar]);
 
+  useEffect(() => {
+    const refreshAppointments = () => {
+      loadDashboard();
+      loadCalendar();
+    };
+    window.addEventListener("appointment-status-updated", refreshAppointments);
+    return () => window.removeEventListener("appointment-status-updated", refreshAppointments);
+  }, [loadDashboard, loadCalendar]);
+
   const metrics = dashboardData?.metrics || {};
   const availableStaff = dashboardData?.data?.availableStaff || [];
   const safeToday = today || getTodayInIndia();
@@ -739,9 +748,12 @@ export default function AdminDashboard() {
                 value={metrics.newCustomersToday ?? 0}
                 icon={Users}
                 iconColor="green"
-                subtitle="Registered today"
+               // subtitle="Registered today"
                 loading={loading}
-              />
+                // eslint-disable-next-line react/jsx-no-duplicate-props
+                subtitle={`Total: ${loading ? "—" : (metrics.totalCustomers ?? 0)}`}
+                />
+              
 
               <MetricCard
                 title="Today's Appointments"

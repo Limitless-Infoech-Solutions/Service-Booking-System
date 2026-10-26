@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+} from "lucide-react";
 import { BUSINESS_ID } from "@/lib/business";
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const ONLINE_BOOKING_CUTOFF_HOURS = 5;
@@ -24,7 +29,11 @@ function buildMonthGrid(year, month) {
   const firstOfMonth = new Date(year, month, 1);
   const startWeekday = firstOfMonth.getDay();
 
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInMonth = new Date(
+    year,
+    month + 1,
+    0
+  ).getDate();
 
   const cells = [];
 
@@ -77,10 +86,18 @@ export default function DateTimeStep({
   adminMode = false,
   onAssignmentOptionsChange,
 }) {
-  const today = useMemo(() => startOfDay(new Date()), []);
+  const today = useMemo(
+    () => startOfDay(new Date()),
+    []
+  );
 
   const [visibleMonth, setVisibleMonth] = useState(
-    () => new Date(today.getFullYear(), today.getMonth(), 1)
+    () =>
+      new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        1
+      )
   );
 
   // Stores the complete API slot objects.
@@ -105,16 +122,16 @@ export default function DateTimeStep({
         selectedDate.getMonth() + 1
       ).padStart(2, "0")}-${String(selectedDate.getDate()).padStart(2, "0")}`
     : "";
-  const availabilityKey = `${
-    adminMode ? "admin" : BUSINESS_ID
-  }|${selectedDateString}|${serviceIdsKey}`;
+  const availabilityKey = `${adminMode ? "admin" : BUSINESS_ID}|${selectedDateString}|${serviceIdsKey}`;
   const currentAvailability =
     availability.key === availabilityKey ? availability : null;
   const loadingSlots =
     Boolean(selectedDate && serviceIdsKey) &&
     (!currentAvailability || currentAvailability.status === "loading");
   const availabilityError =
-    currentAvailability?.status === "error" ? currentAvailability.error : "";
+    currentAvailability?.status === "error"
+      ? currentAvailability.error
+      : "";
   const slots =
     currentAvailability?.status === "success"
       ? currentAvailability.slots
@@ -122,30 +139,48 @@ export default function DateTimeStep({
   const businessHours = currentAvailability?.businessHours || null;
 
   const monthGrid = useMemo(
-    () => buildMonthGrid(visibleMonth.getFullYear(), visibleMonth.getMonth()),
+    () =>
+      buildMonthGrid(
+        visibleMonth.getFullYear(),
+        visibleMonth.getMonth()
+      ),
     [visibleMonth]
   );
 
-  const monthLabel = visibleMonth.toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
+  const monthLabel = visibleMonth.toLocaleDateString(
+    "en-US",
+    {
+      month: "long",
+      year: "numeric",
+    }
+  );
 
   const isCurrentMonth =
-    visibleMonth.getFullYear() === today.getFullYear() &&
+    visibleMonth.getFullYear() ===
+      today.getFullYear() &&
     visibleMonth.getMonth() === today.getMonth();
 
   const goToPrevMonth = () => {
     if (isCurrentMonth) return;
 
     setVisibleMonth(
-      (current) => new Date(current.getFullYear(), current.getMonth() - 1, 1)
+      (current) =>
+        new Date(
+          current.getFullYear(),
+          current.getMonth() - 1,
+          1
+        )
     );
   };
 
   const goToNextMonth = () => {
     setVisibleMonth(
-      (current) => new Date(current.getFullYear(), current.getMonth() + 1, 1)
+      (current) =>
+        new Date(
+          current.getFullYear(),
+          current.getMonth() + 1,
+          1
+        )
     );
   };
 
@@ -173,9 +208,9 @@ export default function DateTimeStep({
         const data = await response.json();
 
         if (!response.ok) {
-          const err = new Error(data.error || "Unable to load available times.");
-          err.status = response.status;
-          throw err;
+          throw new Error(
+            data.error || "Unable to load available times."
+          );
         }
 
         const apiSlots = (data?.availableSlots || []).map((slot) => ({
@@ -206,13 +241,7 @@ export default function DateTimeStep({
 
     fetchAvailability();
     return () => controller.abort();
-  }, [
-    adminMode,
-    availabilityKey,
-    retryCount,
-    selectedDateString,
-    serviceIdsKey,
-  ]);
+  }, [adminMode, availabilityKey, retryCount, selectedDateString, serviceIdsKey]);
 
   useEffect(() => {
     if (!adminMode || !selectedDateString || !serviceIdsKey || !selectedTime) {
@@ -229,40 +258,18 @@ export default function DateTimeStep({
           services: serviceIdsKey,
           time: selectedTime,
         });
-        const response = await fetch(
-          `/api/services/availability?${params.toString()}`,
-          { signal: controller.signal }
-        );
+        const response = await fetch(`/api/services/availability?${params.toString()}`, { signal: controller.signal });
         const data = await response.json();
-        if (!response.ok)
-          throw new Error(
-            data.error ||
-              "Unable to verify admin access or load staff availability."
-          );
-        onAssignmentOptionsChange?.({
-          loading: false,
-          options: data.staffAvailability || [],
-          error: "",
-        });
+        if (!response.ok) throw new Error(data.error || "Unable to verify admin access or load staff availability.");
+        onAssignmentOptionsChange?.({ loading: false, options: data.staffAvailability || [], error: "" });
       } catch (error) {
         if (error.name === "AbortError") return;
-        onAssignmentOptionsChange?.({
-          loading: false,
-          options: [],
-          error: error.message || "Unable to load staff availability.",
-        });
+        onAssignmentOptionsChange?.({ loading: false, options: [], error: error.message || "Unable to load staff availability." });
       }
     }
     fetchAssignmentOptions();
     return () => controller.abort();
-  }, [
-    adminMode,
-    availabilityKey,
-    onAssignmentOptionsChange,
-    selectedTime,
-    selectedDateString,
-    serviceIdsKey,
-  ]);
+  }, [adminMode, availabilityKey, onAssignmentOptionsChange, selectedTime, selectedDateString, serviceIdsKey]);
 
   // This check is separate from fetching, so changing time never refetches.
   useEffect(() => {
@@ -275,41 +282,32 @@ export default function DateTimeStep({
       onSelectTime(null);
       return;
     }
-    if (
-      currentAvailability?.status === "success" &&
-      selectedTime &&
-      !selectedSlot?.time
-    ) {
-      const matchingSlot = currentAvailability.slots.find(
-        (slot) => slot.time === selectedTime
-      );
+    if (currentAvailability?.status === "success" && selectedTime && !selectedSlot?.time) {
+      const matchingSlot = currentAvailability.slots.find((slot) => slot.time === selectedTime);
       if (matchingSlot) onSelectTime(selectedTime, matchingSlot);
     }
-  }, [
-    currentAvailability,
-    onSelectTime,
-    preserveSelectedTime,
-    selectedSlot,
-    selectedTime,
-  ]);
-  // if the user is selecting time before 5 hrs then
+  }, [currentAvailability, onSelectTime, preserveSelectedTime, selectedSlot, selectedTime]);
+  // if the user is selecting time before 5 hrs then 
   const isOnlineBookingCutoff = useMemo(() => {
     if (!selectedDate || !isSameDay(selectedDate, today)) {
       return false;
     }
-
+  
     if (!businessHours?.isOpen || !businessHours?.closeTime) {
       return false;
     }
-
-    const [hours, minutes] = businessHours.closeTime.split(":").map(Number);
-
+  
+    const [hours, minutes] = businessHours.closeTime
+      .split(":")
+      .map(Number);
+  
     const closingDateTime = new Date();
     closingDateTime.setHours(hours, minutes, 0, 0);
-
+  
     const cutoffTime =
-      closingDateTime.getTime() - ONLINE_BOOKING_CUTOFF_HOURS * 60 * 60 * 1000;
-
+      closingDateTime.getTime() -
+      ONLINE_BOOKING_CUTOFF_HOURS * 60 * 60 * 1000;
+  
     // eslint-disable-next-line react-hooks/purity
     return Date.now() >= cutoffTime;
   }, [selectedDate, today, businessHours]);
@@ -353,8 +351,9 @@ export default function DateTimeStep({
         </h1>
 
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
-          Pick a day and a time slot that works for you. You can always
-          reschedule later.
+          Pick a day and a time slot that works
+          for you. You can always reschedule
+          later.
         </p>
       </div>
 
@@ -369,7 +368,9 @@ export default function DateTimeStep({
                 className="shrink-0 text-[#6862b5]"
               />
 
-              <span className="truncate">{monthLabel}</span>
+              <span className="truncate">
+                {monthLabel}
+              </span>
             </div>
 
             <div className="ml-3 flex shrink-0 items-center gap-1.5">
@@ -406,22 +407,32 @@ export default function DateTimeStep({
             {monthGrid.map((date, index) => {
               if (!date) {
                 return (
-                  <span key={`blank-${index}`} className="aspect-square" />
+                  <span
+                    key={`blank-${index}`}
+                    className="aspect-square"
+                  />
                 );
               }
 
               const isPast = date < today;
 
-              const isToday = isSameDay(date, today);
+              const isToday = isSameDay(
+                date,
+                today
+              );
 
-              const isSelected = selectedDate && isSameDay(date, selectedDate);
+              const isSelected =
+                selectedDate &&
+                isSameDay(date, selectedDate);
 
               return (
                 <button
                   key={date.toISOString()}
                   type="button"
                   disabled={isPast}
-                  onClick={() => onSelectDate(date)}
+                  onClick={() =>
+                    onSelectDate(date)
+                  }
                   className={`mx-auto flex aspect-square w-full max-w-10 items-center justify-center rounded-full text-sm font-medium transition ${
                     isSelected
                       ? "bg-slate-900 text-white"
@@ -432,7 +443,9 @@ export default function DateTimeStep({
                 >
                   {date.getDate()}
 
-                  {isToday && !isSelected && <span className="absolute" />}
+                  {isToday && !isSelected && (
+                    <span className="absolute" />
+                  )}
                 </button>
               );
             })}
@@ -450,14 +463,18 @@ export default function DateTimeStep({
 
             <div>
               Available times
+
               {selectedDate && (
                 <span className="ml-1 font-normal text-slate-400">
                   for{" "}
-                  {selectedDate.toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  })}
+                  {selectedDate.toLocaleDateString(
+                    "en-US",
+                    {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    }
+                  )}
                 </span>
               )}
             </div>
@@ -470,7 +487,8 @@ export default function DateTimeStep({
               </p>
 
               <p className="mt-1 text-xs text-slate-400">
-                Available time slots will show up here.
+                Available time slots will show
+                up here.
               </p>
             </div>
           ) : loadingSlots ? (
@@ -485,10 +503,7 @@ export default function DateTimeStep({
               </span>
             </div>
           ) : availabilityError ? (
-            <div
-              className="mt-5 rounded-xl border border-dashed border-red-200 bg-red-50 px-4 py-8 text-center sm:py-10"
-              role="alert"
-            >
+            <div className="mt-5 rounded-xl border border-dashed border-red-200 bg-red-50 px-4 py-8 text-center sm:py-10" role="alert">
               <p className="text-sm font-medium text-red-600">
                 {availabilityError}
               </p>
@@ -509,18 +524,18 @@ export default function DateTimeStep({
                 Retry
               </button>
             </div>
-          ) : isOnlineBookingCutoff ? (
-            <div className="mt-5 rounded-xl border border-dashed border-black/10 px-4 py-8 text-center sm:py-10">
-              <p className="text-sm font-medium text-slate-600">
-                <b>Online booking is not available right now.</b>
-                <br />
-                Please book at least 5 hours in advance.
-              </p>
-
-              <p className="mt-1 text-xs text-slate-400">
-                Please choose another date.
-              </p>
-            </div>
+            ) : isOnlineBookingCutoff ? (
+              <div className="mt-5 rounded-xl border border-dashed border-black/10 px-4 py-8 text-center sm:py-10">
+                <p className="text-sm font-medium text-slate-600">
+                  <b>Online booking is not available right now.</b>
+                  <br />
+                  Please book at least 5 hours in advance.
+                </p>
+            
+                <p className="mt-1 text-xs text-slate-400">
+                  Please choose another date.
+                </p>
+              </div>
           ) : timeSections.length === 0 ? (
             <div className="mt-5 rounded-xl border border-dashed border-black/10 px-4 py-8 text-center sm:py-10">
               <p className="text-sm font-medium text-slate-600">
@@ -533,7 +548,7 @@ export default function DateTimeStep({
             </div>
           ) : (
             <div className="mt-5 max-h-140 space-y-5 overflow-y-auto pr-2">
-              {timeSections.map((section) => (
+  {timeSections.map((section) => (
                 <div key={section.label}>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                     {section.label}
@@ -541,9 +556,13 @@ export default function DateTimeStep({
 
                   <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {section.slots.map((slot) => {
-                      const isAvailable = slot.status === "available";
+                      const isAvailable =
+                        slot.status ===
+                        "available";
 
-                      const selected = selectedTime === slot.time;
+                      const selected =
+                        selectedTime ===
+                        slot.time;
 
                       return (
                         <button
@@ -552,7 +571,10 @@ export default function DateTimeStep({
                           disabled={!isAvailable}
                           onClick={() => {
                             if (isAvailable) {
-                              onSelectTime(slot.time, slot);
+                              onSelectTime(
+                                slot.time,
+                                slot
+                              );
                             }
                           }}
                           className={`relative h-10 rounded-xl border text-sm font-medium transition ${
@@ -563,7 +585,9 @@ export default function DateTimeStep({
                               : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
                           }`}
                         >
-                          {formatTime(slot.time)}
+                          {formatTime(
+                            slot.time
+                          )}
 
                           {!isAvailable && (
                             <span className="ml-1 text-[10px] font-normal">
@@ -580,24 +604,26 @@ export default function DateTimeStep({
           )}
 
           {/* Legend */}
-          {!loadingSlots && !availabilityError && slots.length > 0 && (
-            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-black/5 pt-4">
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span className="h-2.5 w-2.5 rounded-full bg-slate-900" />
-                Selected
-              </div>
+          {!loadingSlots &&
+            !availabilityError &&
+            slots.length > 0 && (
+              <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-black/5 pt-4">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-900" />
+                  Selected
+                </div>
 
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span className="h-2.5 w-2.5 rounded-full border border-slate-300 bg-white" />
-                Available
-              </div>
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <span className="h-2.5 w-2.5 rounded-full border border-slate-300 bg-white" />
+                  Available
+                </div>
 
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <span className="h-2.5 w-2.5 rounded-full bg-slate-100" />
-                Full
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-100" />
+                  Full
+                </div>
               </div>
-            </div>
-          )}
+            )}
         </div>
       </div>
     </>

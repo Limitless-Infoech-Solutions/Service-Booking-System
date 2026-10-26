@@ -11,7 +11,6 @@ import {
   getBusinessDayOfWeek as getISTDayOfWeek,
   isValidBookingDate as isValidDate,
   getFreeIntervals,
-  getServiceIdsError,
 } from "@/lib/booking/scheduling";
 
 export async function GET(request) {
@@ -66,10 +65,14 @@ export async function GET(request) {
       .map((value) => value.trim())
       .filter(Boolean);
 
-      const serviceIdsError = getServiceIdsError(serviceIds);
-      if (serviceIdsError) {
-        return respond({ error: serviceIdsError }, { status: 400 });
-      }
+    if (serviceIds.length === 0) {
+      return respond(
+        {
+          error: "service_ids must contain at least one service ID.",
+        },
+        { status: 400 }
+      );
+    }
 
     const dayOfWeek = getISTDayOfWeek(date);
 
@@ -462,7 +465,7 @@ export async function GET(request) {
         candidateStartMs,
         staffByServiceMap,
         blockedIntervalsByStaff,
-        { enforceAdjacentBuffers: false }
+        { enforceAdjacentBuffers: isAdminMode }
       );
 
       if (!assignments) {
@@ -502,7 +505,27 @@ export async function GET(request) {
           })),
       });
     }
-   //write console Statements here to check the result.
+    console.log("DEBUG businessId:", businessId);
+    console.log("DEBUG serviceIds:", serviceIds);
+    console.log("DEBUG servicesData:", servicesData);
+    console.log("DEBUG staffServicesData:", staffServicesData);
+    console.log("DEBUG eligibleStaffIds:", eligibleStaffIds);
+
+    console.log(
+      "DEBUG staffByServiceMap:",
+      Object.fromEntries(staffByServiceMap)
+    );
+
+    console.log("DEBUG staffList:", staffList);
+    console.log("DEBUG appointmentItems:", appointmentItems);
+    console.log("DEBUG holdItems:", holdItems);
+
+    console.log(
+      "DEBUG blockedIntervalsByStaff:",
+      Object.fromEntries(blockedIntervalsByStaff)
+    );
+
+    console.log("DEBUG availableSlots:", availableSlots);
 
     const selectedSlotAvailable =
       requestedTime &&
@@ -529,7 +552,7 @@ export async function GET(request) {
                   assignmentWindowStartMs,
                   staffByServiceMap,
                   blockedIntervalsByStaff,
-                  { fixedStaffByService, enforceAdjacentBuffers: false }
+                  { fixedStaffByService, enforceAdjacentBuffers: true }
                 )
               );
             const allServiceAssignments = new Map(

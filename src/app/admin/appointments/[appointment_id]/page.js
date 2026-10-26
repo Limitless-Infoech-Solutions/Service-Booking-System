@@ -72,6 +72,10 @@ export default function AppointmentDetailsPage({ params }) {
       return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
     if (s === "cancelled" || s === "canceled")
       return "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
+    if (s === "arrived")
+      return "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200";
+    if (s === "in_service")
+      return "bg-blue-50 text-blue-700 ring-1 ring-blue-200";
     if (s === "in_progress" || s === "in-progress" || s === "ongoing")
       return "bg-blue-50 text-blue-700 ring-1 ring-blue-200";
     if (s === "no_show" || s === "no-show")
@@ -84,6 +88,8 @@ export default function AppointmentDetailsPage({ params }) {
     const s = (status || "").toLowerCase();
     if (s === "completed" || s === "done") return "bg-emerald-500";
     if (s === "cancelled" || s === "canceled") return "bg-rose-500";
+    if (s === "arrived") return "bg-indigo-500";
+    if (s === "in_service") return "bg-blue-500";
     if (s === "in_progress" || s === "in-progress" || s === "ongoing")
       return "bg-blue-500";
     if (s === "no_show" || s === "no-show") return "bg-slate-400";

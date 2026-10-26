@@ -2,17 +2,10 @@
 
 import Link from "next/link";
 import { ArrowLeft, Check, CalendarDays, ArrowRight } from "lucide-react";
-import {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  useEffect,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useMemo, useRef, useState, useEffect, useSyncExternalStore } from "react";
 import Image from "next/image";
 import { BUSINESS_ID } from "@/lib/business";
-import { MAX_SERVICES_PER_BOOKING } from "@/lib/booking/scheduling";
+import toast from "react-hot-toast";
 import ServiceSelectionStep from "@/components/bookings/ServiceSelectionStep";
 import DateTimeStep from "@/components/bookings/DateTimeStep";
 import PaymentStep from "@/components/bookings/PaymentStep";
@@ -36,69 +29,34 @@ const STEP_COPY = {
 };
 
 function formatBookingDate(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}-${String(date.getDate()).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function sameIds(left, right) {
-  return (
-    Array.isArray(left) &&
-    Array.isArray(right) &&
-    left.length === right.length &&
-    [...left].sort().every((id, index) => id === [...right].sort()[index])
-  );
+  return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
+    [...left].sort().every((id, index) => id === [...right].sort()[index]);
 }
 
-function isCompatibleActiveHold(
-  savedHold,
-  validatedHold,
-  selection,
-  staffAssignments
-) {
+function isCompatibleActiveHold(savedHold, validatedHold, selection, staffAssignments) {
   if (!savedHold || !validatedHold?.valid || !validatedHold.hold) return false;
-  if (
-    savedHold.adminMode !== selection.adminMode ||
-    savedHold.date !== selection.date ||
-    savedHold.startTime !== selection.time ||
-    !sameIds(savedHold.serviceIds, selection.serviceIds)
-  )
-    return false;
+  if (savedHold.adminMode !== selection.adminMode || savedHold.date !== selection.date ||
+      savedHold.startTime !== selection.time || !sameIds(savedHold.serviceIds, selection.serviceIds)) return false;
 
   const rows = validatedHold.hold.services || [];
-  if (
-    !sameIds(
-      rows.map((item) => item.service_id),
-      selection.serviceIds
-    )
-  )
-    return false;
+  if (!sameIds(rows.map((item) => item.service_id), selection.serviceIds)) return false;
   const rowsByService = new Map(rows.map((item) => [item.service_id, item]));
-  let cursor = new Date(
-    `${selection.date}T${selection.time}:00+05:30`
-  ).getTime();
+  let cursor = new Date(`${selection.date}T${selection.time}:00+05:30`).getTime();
 
   for (const service of selection.services) {
     const row = rowsByService.get(service.id);
     const end = cursor + Number(service.duration) * 60_000;
-    if (
-      !row ||
-      new Date(row.start_time).getTime() !== cursor ||
-      new Date(row.end_time).getTime() !== end
-    )
-      return false;
+    if (!row || new Date(row.start_time).getTime() !== cursor || new Date(row.end_time).getTime() !== end) return false;
     cursor = end;
   }
 
   if (staffAssignments) {
-    const requestedStaff = new Map(
-      staffAssignments.map((item) => [item.service_id, item.staff_id])
-    );
-    if (
-      rows.some((item) => requestedStaff.get(item.service_id) !== item.staff_id)
-    )
-      return false;
+    const requestedStaff = new Map(staffAssignments.map((item) => [item.service_id, item.staff_id]));
+    if (rows.some((item) => requestedStaff.get(item.service_id) !== item.staff_id)) return false;
   }
   return true;
 }
@@ -113,11 +71,7 @@ export default function AppointmentPage() {
     () => new URLSearchParams(window.location.search).get("mode") === "admin",
     () => false
   );
-  const [assignmentOptions, setAssignmentOptions] = useState({
-    loading: false,
-    options: [],
-    error: "",
-  });
+  const [assignmentOptions, setAssignmentOptions] = useState({ loading: false, options: [], error: "" });
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [reservedAssignments, setReservedAssignments] = useState([]);
@@ -142,8 +96,7 @@ export default function AppointmentPage() {
         const response = await fetch(`/api/services?${params.toString()}`);
 
         const data = await response.json();
-        if (!response.ok || !Array.isArray(data))
-          throw new Error(data.error || "Unable to load services.");
+        if (!response.ok || !Array.isArray(data)) throw new Error(data.error || "Unable to load services.");
         setServiceLoadError("");
 
         console.log("SERVICES API STATUS:", response.status);
@@ -152,7 +105,7 @@ export default function AppointmentPage() {
         const formattedServices = data.map((service) => ({
           id: service.id,
           name: service.name,
-          description: service.description || "",
+            description: service.description || "",
           category: service.category,
           duration: service.duration_minutes,
           price: service.price,
@@ -164,7 +117,8 @@ export default function AppointmentPage() {
       } catch (error) {
         console.error("Services API error:", error);
         setServiceLoadError(error.message || "Unable to load services.");
-      } finally {
+      }
+      finally {
         setIsLoadingServices(false);
       }
     }
@@ -183,9 +137,10 @@ export default function AppointmentPage() {
   // ==================================================
 
   const [selectedServices, setSelectedServices] = useState([]);
+  const [serviceLimitNotice, setServiceLimitNotice] = useState("");
 
   const [activeCategory, setActiveCategory] = useState("All");
-
+  
   const [searchQuery, setSearchQuery] = useState("");
 
   // ==================================================
@@ -257,11 +212,67 @@ export default function AppointmentPage() {
   const [isLoadingAppointment, setIsLoadingAppointment] = useState(false);
   const [isDraftRestored, setIsDraftRestored] = useState(false);
   const [activeFlowHoldConflict, setActiveFlowHoldConflict] = useState(false);
-  const [serviceLimitNotice, setServiceLimitNotice] = useState(false);
   const draftRestoreStartedRef = useRef(null);
-  const draftStorageKey = `appointmentDraft:${
-    isAdminMode ? "admin" : "customer"
-  }`;
+  const releaseHoldRequestRef = useRef(null);
+  const draftStorageKey = `appointmentDraft:${isAdminMode ? "admin" : "customer"}`;
+
+  const releaseCurrentBookingHold = useCallback(async () => {
+    if (releaseHoldRequestRef.current) return releaseHoldRequestRef.current;
+    let savedHold;
+    try {
+      savedHold = JSON.parse(sessionStorage.getItem("bookingHold") || "null");
+    } catch {
+      sessionStorage.removeItem("bookingHold");
+      return true;
+    }
+    if (!savedHold?.holdId) return true;
+
+    const releaseRequest = (async () => {
+      try {
+        const response = await fetch("/api/bookings/hold", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hold_id: savedHold.holdId, admin_mode: savedHold.adminMode === true }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) throw new Error(result.error || "Hold release failed.");
+        sessionStorage.removeItem("bookingHold");
+        setHoldExpiresAt(null);
+        setReservedAssignments([]);
+        setSelectedSlot(null);
+        setActiveFlowHoldConflict(false);
+        return true;
+      } catch (error) {
+        console.error("Booking hold release error:", error);
+        setActiveFlowHoldConflict(true);
+        alert("Your previous reservation could not be released yet. Please retry before reserving a new time.");
+        return false;
+      } finally {
+        releaseHoldRequestRef.current = null;
+      }
+    })();
+    releaseHoldRequestRef.current = releaseRequest;
+    return releaseRequest;
+  }, []);
+
+  useEffect(() => {
+    const releaseOnPageHide = () => {
+      try {
+        const savedHold = JSON.parse(sessionStorage.getItem("bookingHold") || "null");
+        if (!savedHold?.holdId) return;
+        void fetch("/api/bookings/hold", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hold_id: savedHold.holdId, admin_mode: savedHold.adminMode === true }),
+          keepalive: true,
+        });
+      } catch (error) {
+        console.error("Could not send booking hold release during page exit:", error);
+      }
+    };
+    window.addEventListener("pagehide", releaseOnPageHide);
+    return () => window.removeEventListener("pagehide", releaseOnPageHide);
+  }, []);
 
   useEffect(() => {
     if (isLoadingServices) return;
@@ -273,53 +284,34 @@ export default function AppointmentPage() {
       let draft = null;
       let savedHold = null;
       try {
-        draft = JSON.parse(
-          sessionStorage.getItem(`appointmentDraft:${modeKey}`) || "null"
-        );
+        draft = JSON.parse(sessionStorage.getItem(`appointmentDraft:${modeKey}`) || "null");
         savedHold = JSON.parse(sessionStorage.getItem("bookingHold") || "null");
       } catch {
         sessionStorage.removeItem(`appointmentDraft:${modeKey}`);
         sessionStorage.removeItem("bookingHold");
       }
 
-      const serviceIds = Array.isArray(draft?.serviceIds)
-        ? draft.serviceIds
-        : [];
-      const restoredServices = services.filter((service) =>
-        serviceIds.includes(service.id)
-      );
-      const dateValid =
-        typeof draft?.date === "string" &&
-        /^\d{4}-\d{2}-\d{2}$/.test(draft.date) &&
+      const serviceIds = Array.isArray(draft?.serviceIds) ? draft.serviceIds : [];
+      const restoredServices = services.filter((service) => serviceIds.includes(service.id));
+      const dateValid = typeof draft?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(draft.date) &&
         !Number.isNaN(new Date(`${draft.date}T00:00:00Z`).getTime()) &&
-        new Date(`${draft.date}T00:00:00Z`).toISOString().slice(0, 10) ===
-          draft.date;
+        new Date(`${draft.date}T00:00:00Z`).toISOString().slice(0, 10) === draft.date;
       const restoredDate = dateValid
-        ? new Date(
-            Number(draft.date.slice(0, 4)),
-            Number(draft.date.slice(5, 7)) - 1,
-            Number(draft.date.slice(8, 10))
-          )
+        ? new Date(Number(draft.date.slice(0, 4)), Number(draft.date.slice(5, 7)) - 1, Number(draft.date.slice(8, 10)))
         : null;
-      const restoredTime = /^\d{2}:\d{2}$/.test(draft?.time || "")
-        ? draft.time
-        : null;
+      const restoredTime = /^\d{2}:\d{2}$/.test(draft?.time || "") ? draft.time : null;
 
       setSelectedServices(restoredServices);
       setSelectedDate(restoredDate);
       setSelectedTime(restoredTime);
-      const canRestoreDateTimeStep =
-        draft?.step === 2 && restoredServices.length > 0 && restoredDate;
+      const canRestoreDateTimeStep = draft?.step === 2 && restoredServices.length > 0 && restoredDate;
       setStep(canRestoreDateTimeStep ? 2 : 1);
 
       if (savedHold?.holdId && savedHold.adminMode === isAdminMode) {
         try {
           const params = new URLSearchParams({ hold_id: savedHold.holdId });
           if (isAdminMode) params.set("mode", "admin");
-          const response = await fetch(
-            `/api/bookings/hold?${params.toString()}`,
-            { cache: "no-store" }
-          );
+          const response = await fetch(`/api/bookings/hold?${params.toString()}`, { cache: "no-store" });
           const validation = await response.json();
           if (!response.ok || !validation.valid) {
             sessionStorage.removeItem("bookingHold");
@@ -338,25 +330,15 @@ export default function AppointmentPage() {
               serviceIds: restoredServices.map((service) => service.id),
               services: restoredServices,
             });
-            if (
-              compatible &&
-              savedDate === draft?.date &&
-              savedTime === restoredTime
-            ) {
-              const assignments = validation.hold.services.map((item) => ({
-                ...item,
-              }));
+            if (compatible && savedDate === draft?.date && savedTime === restoredTime) {
+              const assignments = validation.hold.services.map((item) => ({ ...item }));
               setSelectedDate(restoredDate);
               setSelectedTime(savedTime);
               setSelectedSlot({ time: savedTime, assignments, held: true });
-              setReservedAssignments(
-                assignments.map((item) => ({
-                  ...item,
-                  service_name: restoredServices.find(
-                    (service) => service.id === item.service_id
-                  )?.name,
-                }))
-              );
+              setReservedAssignments(assignments.map((item) => ({
+                ...item,
+                service_name: restoredServices.find((service) => service.id === item.service_id)?.name,
+              })));
               setHoldExpiresAt(validation.hold.expires_at);
               setStep(2);
             } else {
@@ -383,23 +365,13 @@ export default function AppointmentPage() {
       return;
     }
     const date = selectedDate ? formatBookingDate(selectedDate) : null;
-    sessionStorage.setItem(
-      draftStorageKey,
-      JSON.stringify({
-        serviceIds: selectedServices.map((service) => service.id),
-        date,
-        time: selectedTime,
-        step: step === 1 ? 1 : 2,
-      })
-    );
-  }, [
-    draftStorageKey,
-    isDraftRestored,
-    selectedDate,
-    selectedServices,
-    selectedTime,
-    step,
-  ]);
+    sessionStorage.setItem(draftStorageKey, JSON.stringify({
+      serviceIds: selectedServices.map((service) => service.id),
+      date,
+      time: selectedTime,
+      step: step === 1 ? 1 : 2,
+    }));
+  }, [draftStorageKey, isDraftRestored, selectedDate, selectedServices, selectedTime, step]);
 
   // ==================================================
   // SERVICE FILTERING
@@ -430,37 +402,60 @@ export default function AppointmentPage() {
   // SERVICE SELECTION
   // ==================================================
 
-  const handleSelectService = (service) => {
-    const alreadySelected = selectedServices.some(
-      (item) => item.id === service.id
-    );
+  
 
-    if (
-      !alreadySelected &&
-      selectedServices.length >= MAX_SERVICES_PER_BOOKING
-    ) {
-      setServiceLimitNotice(true); // show the friendly message
-      return; // and do NOT add the service
+const handleSelectService = (service) => {
+  const alreadySelected = selectedServices.some(
+    (item) => item.id === service.id
+  );
+
+  // Allow deselecting an existing service.
+  if (alreadySelected) {
+    if (sessionStorage.getItem("bookingHold")) {
+      void releaseCurrentBookingHold();
     }
 
-    setServiceLimitNotice(false);
-    if (sessionStorage.getItem("bookingHold")) setActiveFlowHoldConflict(true);
     setSelectedSlot(null);
-    setSelectedServices((current) => {
-      if (current.some((item) => item.id === service.id)) {
-        return current.filter((item) => item.id !== service.id);
-      }
-      return [...current, { ...service }];
-    });
-  };
-  
+    setServiceLimitNotice("");
+
+    setSelectedServices((current) =>
+      current.filter((item) => item.id !== service.id)
+    );
+
+    return;
+  }
+
+  // Prevent selecting more than five services.
+  if (selectedServices.length >= 5) {
+    toast.error("You can select a maximum of 5 services per booking.");
+    setServiceLimitNotice(
+      "You can select a maximum of 5 services per booking."
+    );
+    return;
+  }
+
+  // Release an existing hold when services change.
+  if (sessionStorage.getItem("bookingHold")) {
+    void releaseCurrentBookingHold();
+  }
+
+  setServiceLimitNotice("");
+  setSelectedSlot(null);
+
+  setSelectedServices((current) => [
+    ...current,
+    { ...service },
+  ]);
+};
+
+
+
   // ==================================================
   // REMOVE SERVICE
   // ==================================================
 
   const handleRemoveService = (serviceId) => {
-    setServiceLimitNotice(false);
-    if (sessionStorage.getItem("bookingHold")) setActiveFlowHoldConflict(true);
+    if (sessionStorage.getItem("bookingHold")) void releaseCurrentBookingHold();
     setSelectedSlot(null);
     setSelectedServices((current) =>
       current.filter((service) => service.id !== serviceId)
@@ -472,7 +467,7 @@ export default function AppointmentPage() {
   // ==================================================
 
   const handleSelectDate = (date) => {
-    if (sessionStorage.getItem("bookingHold")) setActiveFlowHoldConflict(true);
+    if (sessionStorage.getItem("bookingHold")) void releaseCurrentBookingHold();
     setSelectedDate(date);
 
     // Changing the date invalidates the previously
@@ -482,11 +477,10 @@ export default function AppointmentPage() {
   };
 
   const handleSelectTime = useCallback((time, slot = null) => {
-    if (sessionStorage.getItem("bookingHold") && slot?.held !== true)
-      setActiveFlowHoldConflict(true);
+    if (sessionStorage.getItem("bookingHold") && slot?.held !== true) void releaseCurrentBookingHold();
     setSelectedTime(time);
     setSelectedSlot(slot);
-  }, []);
+  }, [releaseCurrentBookingHold]);
 
   const handleAssignmentOptionsChange = useCallback((value) => {
     setAssignmentOptions(value);
@@ -496,9 +490,13 @@ export default function AppointmentPage() {
   // BACK BUTTON
   // ==================================================
 
-  const handleBack = () => {
+  const handleBack = async () => {
     if (step === 1) {
       return;
+    }
+
+    if ((step === 2 || step === 3) && sessionStorage.getItem("bookingHold")) {
+      await releaseCurrentBookingHold();
     }
 
     setStep((current) => current - 1);
@@ -526,13 +524,7 @@ export default function AppointmentPage() {
       sessionStorage.removeItem("bookingHold");
       return false;
     }
-    if (
-      !savedHold?.holdId ||
-      !selectedDate ||
-      !selectedTime ||
-      !selectedServices.length
-    )
-      return false;
+    if (!savedHold?.holdId || !selectedDate || !selectedTime || !selectedServices.length) return false;
 
     const dateString = formatBookingDate(selectedDate);
     const serviceIds = selectedServices.map((service) => service.id);
@@ -540,9 +532,7 @@ export default function AppointmentPage() {
     if (isAdminMode) params.set("mode", "admin");
 
     try {
-      const response = await fetch(`/api/bookings/hold?${params.toString()}`, {
-        cache: "no-store",
-      });
+      const response = await fetch(`/api/bookings/hold?${params.toString()}`, { cache: "no-store" });
       const validation = await response.json();
       if (validation.code === "HOLD_EXPIRED") {
         sessionStorage.removeItem("bookingHold");
@@ -550,9 +540,7 @@ export default function AppointmentPage() {
         setSelectedTime(null);
         setSelectedSlot(null);
         setStep(2);
-        alert(
-          "Your booking hold expired. Your services and date are saved; choose an available time again."
-        );
+        alert("Your booking hold expired. Your services and date are saved; choose an available time again.");
         return true;
       }
       if (response.status === 404) {
@@ -560,49 +548,32 @@ export default function AppointmentPage() {
         return false;
       }
       if (!response.ok || !validation.valid) {
-        alert(
-          validation.error || "Unable to validate the current booking hold."
-        );
+        alert(validation.error || "Unable to validate the current booking hold.");
         return true;
       }
 
-      const compatible = isCompatibleActiveHold(
-        savedHold,
-        validation,
-        {
-          adminMode: isAdminMode,
-          date: dateString,
-          time: selectedTime,
-          serviceIds,
-          services: selectedServices,
-        },
-        staffAssignments
-      );
+      const compatible = isCompatibleActiveHold(savedHold, validation, {
+        adminMode: isAdminMode,
+        date: dateString,
+        time: selectedTime,
+        serviceIds,
+        services: selectedServices,
+      }, staffAssignments);
       if (!compatible) {
-        setActiveFlowHoldConflict(true);
-        alert(
-          "This booking flow already has an active hold for a different selection. It cannot be replaced until its existing reservation expires."
-        );
-        return true;
+        const released = await releaseCurrentBookingHold();
+        if (!released) return true;
+        return false;
       }
 
       setActiveFlowHoldConflict(false);
       setHoldExpiresAt(validation.hold.expires_at);
       const allocations = validation.hold.services.map((item) => ({
         ...item,
-        service_name: selectedServices.find(
-          (service) => service.id === item.service_id
-        )?.name,
-        staff_name: assignmentOptions.options.find(
-          (staff) => staff.staff_id === item.staff_id
-        )?.name,
+        service_name: selectedServices.find((service) => service.id === item.service_id)?.name,
+        staff_name: assignmentOptions.options.find((staff) => staff.staff_id === item.staff_id)?.name,
       }));
       setReservedAssignments(allocations);
-      setSelectedSlot({
-        time: selectedTime,
-        assignments: allocations,
-        held: true,
-      });
+      setSelectedSlot({ time: selectedTime, assignments: allocations, held: true });
       setIsAssignmentModalOpen(false);
       setIsAuthModalOpen(true);
       return true;
@@ -613,17 +584,9 @@ export default function AppointmentPage() {
     }
   };
 
-  const reserveBookingHold = async ({
-    adminMode = false,
-    staffAssignments,
-  } = {}) => {
-    if (
-      holdRequestRef.current ||
-      !selectedDate ||
-      !selectedTime ||
-      !selectedServices.length
-    )
-      return;
+  const reserveBookingHold = async ({ adminMode = false, staffAssignments } = {}) => {
+    if (holdRequestRef.current || !selectedDate || !selectedTime || !selectedServices.length) return;
+    if (releaseHoldRequestRef.current && !(await releaseHoldRequestRef.current)) return;
     if (await resumeCurrentBookingHold(staffAssignments)) return;
     holdRequestRef.current = true;
     setIsHolding(true);
@@ -644,51 +607,33 @@ export default function AppointmentPage() {
       const data = await response.json();
       if (!response.ok) {
         if (data.code === "ACTIVE_FLOW_HOLD") setActiveFlowHoldConflict(true);
-        alert(
-          data.error ||
-            data.message ||
-            "Unable to reserve this appointment. Please choose another time or assignment."
-        );
-        if (adminMode && data.code === "SLOT_UNAVAILABLE")
-          setIsAssignmentModalOpen(false);
+        alert(data.error || data.message || "Unable to reserve this appointment. Please choose another time or assignment.");
+        if (adminMode && data.code === "SLOT_UNAVAILABLE") setIsAssignmentModalOpen(false);
         return;
       }
       const allocationDetails = (data.allocations || []).map((item) => ({
         ...item,
-        service_name: selectedServices.find(
-          (service) => service.id === item.service_id
-        )?.name,
-        staff_name: assignmentOptions.options.find(
-          (staff) => staff.staff_id === item.staff_id
-        )?.name,
+        service_name: selectedServices.find((service) => service.id === item.service_id)?.name,
+        staff_name: assignmentOptions.options.find((staff) => staff.staff_id === item.staff_id)?.name,
       }));
       setReservedAssignments(allocationDetails);
-      setSelectedSlot({
-        time: selectedTime,
-        assignments: allocationDetails,
-        held: true,
-      });
+      setSelectedSlot({ time: selectedTime, assignments: allocationDetails, held: true });
       setActiveFlowHoldConflict(false);
-      sessionStorage.setItem(
-        "bookingHold",
-        JSON.stringify({
-          holdId: data.holdId,
-          expiresAt: data.expiresAt,
-          serviceIds: selectedServices.map((service) => service.id),
-          date: dateString,
-          startTime: selectedTime,
-          allocations: allocationDetails,
-          adminMode,
-        })
-      );
+      sessionStorage.setItem("bookingHold", JSON.stringify({
+        holdId: data.holdId,
+        expiresAt: data.expiresAt,
+        serviceIds: selectedServices.map((service) => service.id),
+        date: dateString,
+        startTime: selectedTime,
+        allocations: allocationDetails,
+        adminMode,
+      }));
       setHoldExpiresAt(data.expiresAt);
       setIsAssignmentModalOpen(false);
       setIsAuthModalOpen(true);
     } catch (error) {
       console.error("Appointment hold error:", error);
-      alert(
-        "Something went wrong while reserving your appointment. Please try again."
-      );
+      alert("Something went wrong while reserving your appointment. Please try again.");
     } finally {
       holdRequestRef.current = false;
       setIsHolding(false);
@@ -700,14 +645,8 @@ export default function AppointmentPage() {
       setStep(2);
       return;
     }
-    if (
-      step !== 2 ||
-      !selectedDate ||
-      !selectedTime ||
-      !selectedServices.length ||
-      holdRequestRef.current
-    )
-      return;
+    if (step !== 2 || !selectedDate || !selectedTime || !selectedServices.length || holdRequestRef.current) return;
+    if (releaseHoldRequestRef.current && !(await releaseHoldRequestRef.current)) return;
     if (isAdminMode) {
       if (await resumeCurrentBookingHold()) return;
       if (assignmentOptions.loading) return;
@@ -716,9 +655,7 @@ export default function AppointmentPage() {
         return;
       }
       if (!assignmentOptions.options.length) {
-        alert(
-          "No qualified staff availability was returned. Choose another time."
-        );
+        alert("No qualified staff availability was returned. Choose another time.");
         return;
       }
       setIsAssignmentModalOpen(true);
@@ -735,24 +672,16 @@ export default function AppointmentPage() {
   // CAN CONTINUE
   // ==================================================
 
-  const canContinue =
-    step === 2
-      ? Boolean(selectedDate && selectedTime) &&
-        !(isAdminMode && assignmentOptions.loading)
-      : true;
+  const canContinue = step === 2
+    ? Boolean(selectedDate && selectedTime) && !(isAdminMode && assignmentOptions.loading)
+    : true;
 
   // ==================================================
   // BOOKING SUMMARY BUTTON LABEL
   // ==================================================
 
   const continueLabel =
-    step === 1
-      ? "Continue"
-      : step === 2
-      ? isAdminMode && assignmentOptions.loading
-        ? "Checking staff availability…"
-        : "Confirm date & time"
-      : "";
+    step === 1 ? "Continue" : step === 2 ? (isAdminMode && assignmentOptions.loading ? "Checking staff availability…" : "Confirm date & time") : "";
 
   // ==================================================
   // CUSTOMER AUTHENTICATION COMPLETE
@@ -793,9 +722,7 @@ export default function AppointmentPage() {
         },
 
         body: JSON.stringify({
-          ...(isAdminMode
-            ? { admin_mode: true }
-            : { business_id: BUSINESS_ID }),
+          ...(isAdminMode ? { admin_mode: true } : { business_id: BUSINESS_ID }),
 
           holdId: hold.holdId,
 
@@ -814,15 +741,8 @@ export default function AppointmentPage() {
       // --------------------------------------------------
 
       if (!response.ok || !data.success) {
-        if (
-          isAdminMode &&
-          data.code === "CONFIRMED_ASSIGNMENT_MISMATCH" &&
-          data.appointment_id
-        ) {
-          setConfirmationWarning(
-            data.error ||
-              "The saved appointment differs from the reserved assignment."
-          );
+        if (isAdminMode && data.code === "CONFIRMED_ASSIGNMENT_MISMATCH" && data.appointment_id) {
+          setConfirmationWarning(data.error || "The saved appointment differs from the reserved assignment.");
           setAppointmentId(data.appointment_id);
           setStep(5);
           return;
@@ -899,11 +819,7 @@ export default function AppointmentPage() {
       try {
         setIsLoadingAppointment(true);
 
-        const response = await fetch(
-          `/api/appointments/${appointmentId}${
-            isAdminMode ? "?mode=admin" : ""
-          }`
-        );
+      const response = await fetch(`/api/appointments/${appointmentId}${isAdminMode ? "?mode=admin" : ""}`);
 
         const data = await response.json();
         console.log("appointment response", data);
@@ -1093,23 +1009,13 @@ export default function AppointmentPage() {
           </header>
 
           {isAdminMode && serviceLoadError && (
-            <p
-              role="alert"
-              className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-            >
-              {serviceLoadError} Sign in with an active business-admin account
-              and try again.
+            <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {serviceLoadError} Sign in with an active business-admin account and try again.
             </p>
           )}
           {activeFlowHoldConflict && (
-            <p
-              role="alert"
-              className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-            >
-              This booking flow still has an active reservation for a different
-              selection. The current database interface does not expose a
-              verified way to release or replace it; it will expire
-              automatically.
+            <p role="alert" className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              The previous reservation could not be released. Retry the release before reserving another time. Unconfirmed holds expire automatically after five minutes.
             </p>
           )}
 
@@ -1145,7 +1051,7 @@ export default function AppointmentPage() {
                   isLoadingServices={isLoadingServices}
                   onSelectService={handleSelectService}
                   limitNotice={serviceLimitNotice}
-                  maxServices={MAX_SERVICES_PER_BOOKING}
+                  maxServices={5}
                 />
               )}
 
@@ -1276,14 +1182,11 @@ export default function AppointmentPage() {
                           </div>
 
                           <h1 className="mt-6 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-                            {confirmationWarning
-                              ? "Appointment created — review required"
-                              : "Booking confirmed"}
+                            {confirmationWarning ? "Appointment created — review required" : "Booking confirmed"}
                           </h1>
 
                           <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-500 sm:text-base">
-                            {confirmationWarning ||
-                              "Your appointment has been successfully booked. We look forward to seeing you."}
+                            {confirmationWarning || "Your appointment has been successfully booked. We look forward to seeing you."}
                           </p>
 
                           {/* BOOKING REFERENCE */}
@@ -1296,15 +1199,7 @@ export default function AppointmentPage() {
                           </p>
                         </div>
 
-                        {confirmationWarning && (
-                          <p
-                            role="alert"
-                            className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-                          >
-                            {confirmationWarning} The saved appointment details
-                            below are from the database.
-                          </p>
-                        )}
+                        {confirmationWarning && <p role="alert" className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">{confirmationWarning} The saved appointment details below are from the database.</p>}
 
                         {/* ==================================================
                             BOOKING DETAILS
@@ -1333,20 +1228,20 @@ export default function AppointmentPage() {
                                   {/* SERVICE IMAGE */}
 
                                   <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                                    {item?.services?.image ? (
-                                      <Image
-                                        src={item.services.image}
-                                        alt={item.services?.name || "Service"}
-                                        width={80}
-                                        height={80}
-                                        className="h-full w-full object-cover"
-                                      />
-                                    ) : (
-                                      <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
-                                        No image
-                                      </div>
-                                    )}
-                                  </div>
+  {item?.services?.image ? (
+    <Image
+      src={item.services.image}
+      alt={item.services?.name || "Service"}
+      width={80}
+      height={80}
+      className="h-full w-full object-cover"
+    />
+  ) : (
+    <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+      No image
+    </div>
+  )}
+</div>
 
                                   {/* SERVICE INFORMATION */}
 
@@ -1358,24 +1253,7 @@ export default function AppointmentPage() {
                                     <p className="mt-1 text-sm text-slate-500">
                                       Duration: {item.duration_minutes} minutes
                                     </p>
-                                    {isAdminMode && (
-                                      <p className="mt-1 text-sm text-slate-500">
-                                        Staff:{" "}
-                                        {item.staff?.name ||
-                                          (reservedAssignments.find(
-                                            (assignment) =>
-                                              assignment.service_id ===
-                                              item.service_id
-                                          )?.staff_id === item.staff_id
-                                            ? reservedAssignments.find(
-                                                (assignment) =>
-                                                  assignment.service_id ===
-                                                  item.service_id
-                                              )?.staff_name
-                                            : null) ||
-                                          "Staff assignment unavailable"}
-                                      </p>
-                                    )}
+                                    {isAdminMode && <p className="mt-1 text-sm text-slate-500">Staff: {item.staff?.name || (reservedAssignments.find((assignment) => assignment.service_id === item.service_id)?.staff_id === item.staff_id ? reservedAssignments.find((assignment) => assignment.service_id === item.service_id)?.staff_name : null) || "Staff assignment unavailable"}</p>}
                                   </div>
 
                                   {/* SERVICE PRICE */}
@@ -1417,15 +1295,7 @@ export default function AppointmentPage() {
                                         year: "numeric",
                                       })
                                     : "—"}
-                                  {isAdminMode &&
-                                    appointment.end_time &&
-                                    ` – ${new Date(
-                                      appointment.end_time
-                                    ).toLocaleTimeString("en-IN", {
-                                      timeZone: "Asia/Kolkata",
-                                      hour: "numeric",
-                                      minute: "2-digit",
-                                    })}`}
+                                  {isAdminMode && appointment.end_time && ` – ${new Date(appointment.end_time).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}`}
                                 </p>
                               </div>
 
@@ -1498,9 +1368,7 @@ export default function AppointmentPage() {
                           {/* BOOK ANOTHER */}
 
                           <Link
-                            href={
-                              isAdminMode ? "/admin/appointments/new" : "/book"
-                            }
+                            href={isAdminMode ? "/admin/appointments/new" : "/book"}
                             className="flex h-12 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f6c945] hover:text-slate-900"
                           >
                             Book another appointment
@@ -1558,6 +1426,7 @@ export default function AppointmentPage() {
             expiresAt={holdExpiresAt}
             onClose={() => {
               setIsAuthModalOpen(false);
+              void releaseCurrentBookingHold();
             }}
             onComplete={handleAuthComplete}
           />

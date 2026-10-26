@@ -93,11 +93,7 @@ export default function ServiceSelectionStep({
 
       {/* Services */}
       <div className="mt-7">
-      {limitNotice && (
-  <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-    You can book up to {maxServices} services in one visit. Remove one to add another, or make a second booking for the rest.
-  </p>
-)}
+      
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {filteredServices.map((service) => (
             <ServiceCard

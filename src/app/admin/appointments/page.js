@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import AppointmentStatusManager from "@/components/admin/AppointmentStatusManager";
 import {
   CalendarDays,
   ChevronDown,
@@ -14,6 +15,8 @@ const TIME_ZONE = "Asia/Kolkata";
 const STATUSES = [
   ["", "All statuses"],
   ["confirmed", "Confirmed"],
+  ["arrived", "Arrived"],
+  ["in_service", "In Service"],
   ["completed", "Completed"],
   ["cancelled", "Cancelled"],
   ["no_show", "No Show"],
@@ -52,10 +55,21 @@ const readableDate = (key, options) =>
 const statusLabel = (status) =>
   ({ no_show: "No Show" }[status] || status?.replaceAll("_", " ") || "Unknown");
 
+const statusClasses = {
+  confirmed: "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
+  arrived: "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100",
+  in_service: "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100",
+  completed: "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+  cancelled: "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100",
+  no_show: "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200",
+};
+
 export default function AppointmentsPage() {
   const [selectedDate, setSelectedDate] = useState(() => todayInBusinessZone());
   const [windowStart, setWindowStart] = useState(() => todayInBusinessZone());
   const [appointments, setAppointments] = useState([]);
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -80,6 +94,11 @@ export default function AppointmentsPage() {
     search: searchQuery,
   })}`;
   useEffect(() => {
+    const refreshAppointments = () => setRefreshKey((key) => key + 1);
+    window.addEventListener("appointment-status-updated", refreshAppointments);
+    return () => window.removeEventListener("appointment-status-updated", refreshAppointments);
+  }, []);
+  useEffect(() => {
     const controller = new AbortController();
     fetch(appointmentUrl, { signal: controller.signal })
       .then(async (response) => ({ response, result: await response.json() }))
@@ -99,7 +118,7 @@ export default function AppointmentsPage() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [appointmentUrl]);
+  }, [appointmentUrl, refreshKey]);
   useEffect(() => {
     const onPointerDown = (event) => {
       if (!calendarRef.current?.contains(event.target)) setCalendarOpen(false);
@@ -129,6 +148,17 @@ export default function AppointmentsPage() {
       selectDate(
         direction > 0 ? addDays(selectedDate, 1) : addDays(selectedDate, -1)
       );
+  }
+  async function refreshSelectedAppointment() {
+    if (!selectedAppointment?.id) return;
+    setRefreshKey((key) => key + 1);
+    try {
+      const response = await fetch(`/api/admin/appointments/${encodeURIComponent(selectedAppointment.id)}`, { cache: "no-store" });
+      const result = await response.json();
+      if (response.ok && result.appointment) setSelectedAppointment(result.appointment);
+    } catch (refreshError) {
+      console.error("Failed to refresh appointment after status transition:", refreshError);
+    }
   }
   const [year, monthNumber] = month.split("-").map(Number);
   const monthStartKey = `${month}-01`;
@@ -295,7 +325,6 @@ export default function AppointmentsPage() {
       </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
-      
         <select
           value={status}
           onChange={(event) => {
@@ -386,19 +415,16 @@ export default function AppointmentsPage() {
                   <div className="text-sm text-slate-600">
                     {staffNames.join(", ") || "Unassigned"}
                   </div>
-                  <span
-                    className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${
-                      appointment.status === "confirmed"
-                        ? "bg-blue-50 text-blue-700"
-                        : appointment.status === "completed"
-                        ? "bg-emerald-50 text-emerald-700"
-                        : appointment.status === "cancelled"
-                        ? "bg-rose-50 text-rose-700"
-                        : "bg-slate-100 text-slate-700"
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAppointment(appointment)}
+                    aria-label={`Manage status for ${appointment.customers?.name || "appointment"}: ${statusLabel(appointment.status)}`}
+                    className={`inline-flex h-10 min-w-[120px] items-center justify-center rounded-lg border px-4 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      statusClasses[appointment.status] || "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
                     }`}
                   >
                     {statusLabel(appointment.status)}
-                  </span>
+                  </button>
                   <div className="font-semibold text-slate-900">
                     ₹
                     {Number(appointment.total_amount || 0).toLocaleString(
@@ -417,6 +443,13 @@ export default function AppointmentsPage() {
           })}
         </div>
       )}
+      {selectedAppointment && <AppointmentStatusManager
+        key={selectedAppointment.id}
+        appointment={selectedAppointment}
+        presentation="modal"
+        onUpdated={refreshSelectedAppointment}
+        onClose={() => setSelectedAppointment(null)}
+      />}
     </div>
   );
 }

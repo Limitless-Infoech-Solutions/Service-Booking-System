@@ -35,8 +35,9 @@ export async function GET(request) {
   }
 
   try {
-    // 1. Get the selected date from the URL.
+    // 1. Get the selected date or calendar month from the URL.
     const requestedDate = adminSearchParams.get("date");
+    const requestedMonth = adminSearchParams.get("month");
 
     const date = requestedDate || getDateInIST();
 
@@ -60,8 +61,36 @@ export async function GET(request) {
       );
     }
 
-    // 2. Calculate the selected day's IST boundaries.
-    const { start, end } = getISTDayBounds(date);
+    // A month request returns appointments for calendar markers; a date request
+    // returns that day's schedule. Both use the same real appointment data.
+    const month = requestedMonth || date.slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return NextResponse.json(
+        { error: "Invalid month. Use YYYY-MM." },
+        { status: 400 }
+      );
+    }
+
+    const parsedMonth = new Date(`${month}-01T00:00:00Z`);
+    if (
+      Number.isNaN(parsedMonth.getTime()) ||
+      parsedMonth.toISOString().slice(0, 7) !== month
+    ) {
+      return NextResponse.json(
+        { error: "Invalid calendar month." },
+        { status: 400 }
+      );
+    }
+
+    const monthEndDate = new Date(
+      Date.UTC(parsedMonth.getUTCFullYear(), parsedMonth.getUTCMonth() + 1, 1)
+    ).toISOString().slice(0, 10);
+    const { start, end } = requestedMonth
+      ? {
+          start: `${month}-01T00:00:00+05:30`,
+          end: `${monthEndDate}T00:00:00+05:30`,
+        }
+      : getISTDayBounds(date);
 
     // 3. Fetch appointments scheduled for that date.
     const { data: appointments, error } = await context.supabase
@@ -115,6 +144,7 @@ export async function GET(request) {
 
     return adminJson(context, {
       date,
+      month,
       timeZone: TIME_ZONE,
 
       metrics: {

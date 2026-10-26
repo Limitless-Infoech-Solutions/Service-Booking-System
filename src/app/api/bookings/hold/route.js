@@ -11,10 +11,24 @@ import {
   getBusinessEpochMs as getISTEpochMs,
   getBusinessDayOfWeek as getISTDayOfWeek,
   isValidBookingDate as isValidDate,
-  getServiceIdsError,
 } from "@/lib/booking/scheduling";
 
 const HOLD_DURATION_MINUTES = 5;
+
+async function expireActiveHold(client, holdId, businessId) {
+  const now = new Date().toISOString();
+  const { data, error } = await client
+    .from("booking_holds")
+    .update({ expires_at: now })
+    .eq("id", holdId)
+    .eq("business_id", businessId)
+    .eq("status", "active")
+    .gt("expires_at", now)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
 
 function setBookingHoldCookie(response, holdId, isAdminMode = false) {
   response.cookies.set(
@@ -126,6 +140,54 @@ export async function GET(request) {
   }
 }
 
+export async function DELETE(request) {
+  let adminContext = null;
+  try {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
+    }
+    const { hold_id: holdId, admin_mode: isAdminMode = false } = body || {};
+    if (typeof holdId !== "string" || !holdId || typeof isAdminMode !== "boolean") {
+      return NextResponse.json({ error: "A valid hold_id and admin_mode are required." }, { status: 400 });
+    }
+
+    const expectedCookie = `${isAdminMode ? "admin" : "customer"}:${holdId}`;
+    if (request.cookies.get("booking_flow_hold")?.value !== expectedCookie) {
+      return NextResponse.json(
+        { success: false, error: "Booking hold does not belong to this browser flow." },
+        { status: 409 }
+      );
+    }
+
+    let client = supabase;
+    let businessId = BUSINESS_ID;
+    if (isAdminMode) {
+      adminContext = await authorizeBusinessAdmin(request);
+      if (adminContext.error) {
+        return adminJson(adminContext, { error: adminContext.error }, { status: adminContext.status });
+      }
+      client = adminContext.supabase;
+      businessId = adminContext.businessId;
+    }
+
+    const released = await expireActiveHold(client, holdId, businessId);
+    const response = adminContext
+      ? adminJson(adminContext, { success: true, released })
+      : NextResponse.json({ success: true, released });
+    response.cookies.set("booking_flow_hold", "", { path: "/", maxAge: 0 });
+    return response;
+  } catch (error) {
+    console.error("Booking hold release error:", { code: error?.code || null });
+    const body = { success: false, error: "Unable to release booking hold." };
+    return adminContext
+      ? adminJson(adminContext, body, { status: 500 })
+      : NextResponse.json(body, { status: 500 });
+  }
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -172,10 +234,24 @@ export async function POST(request) {
       );
     }
 
-    const serviceIdsError = getServiceIdsError(serviceIds);
-    if (serviceIdsError) {
-      return NextResponse.json({ error: serviceIdsError }, { status: 400 });
+    if (!Array.isArray(serviceIds)) {
+      return NextResponse.json(
+        {
+          error: "service_ids must be an array.",
+        },
+        { status: 400 }
+      );
     }
+
+    if (serviceIds.length === 0) {
+      return NextResponse.json(
+        {
+          error: "At least one service is required.",
+        },
+        { status: 400 }
+      );
+    }
+
     if (!isValidDate(date)) {
       return NextResponse.json(
         {
@@ -355,9 +431,8 @@ export async function POST(request) {
       0
     );
 
-    // Reuse only the live hold bound to this browser flow. If the selection
-    // changed, refuse to create a second hold until the existing one expires;
-    // the deployed RPC has no locally verified release/update contract.
+    // Reuse an unchanged live hold. If its selection changed, expire this
+    // cookie-bound hold before availability is checked and another is created.
     const flowCookie = request.cookies.get("booking_flow_hold")?.value;
     const [flowMode, flowHoldId] = flowCookie?.split(":") || [];
     if (flowHoldId) {
@@ -429,17 +504,16 @@ export async function POST(request) {
         }
 
         if (!exactSchedule) {
-          return NextResponse.json(
-            {
-              error:
-                "This booking flow already has an active hold for a different selection. It cannot be replaced until its reservation expires.",
-              code: "ACTIVE_FLOW_HOLD",
-            },
-            { status: 409 }
-          );
+          if (flowMode !== (isAdminMode ? "admin" : "customer")) {
+            return NextResponse.json(
+              { error: "An active hold belongs to another booking flow.", code: "ACTIVE_FLOW_HOLD" },
+              { status: 409 }
+            );
+          }
+          await expireActiveHold(bookingClient, flowHold.id, businessId);
         }
-
-        const reusedResponse = {
+        if (exactSchedule) {
+          const reusedResponse = {
           success: true,
           holdId: flowHold.id,
           expiresAt: flowHold.expires_at,
@@ -454,11 +528,11 @@ export async function POST(request) {
             start_time: item.start_time,
             end_time: item.end_time,
           })),
-        };
-        const response = isAdminMode
+          };
+          const response = isAdminMode
           ? adminJson(adminContext, reusedResponse, { status: 200 })
           : NextResponse.json(reusedResponse, { status: 200 });
-        if (isAdminMode) {
+          if (isAdminMode) {
           response.cookies.set("admin_booking_business", businessId, {
             httpOnly: true,
             sameSite: "lax",
@@ -466,8 +540,9 @@ export async function POST(request) {
             path: "/",
             maxAge: HOLD_DURATION_MINUTES * 60,
           });
+          }
+          return setBookingHoldCookie(response, flowHold.id, isAdminMode);
         }
-        return setBookingHoldCookie(response, flowHold.id, isAdminMode);
       }
     }
 
@@ -804,7 +879,7 @@ export async function POST(request) {
       requestedStartMs,
       staffByServiceMap,
       blockedIntervalsByStaff,
-      { fixedStaffByService, enforceAdjacentBuffers: false }
+      { fixedStaffByService, enforceAdjacentBuffers: Boolean(isAdminMode) }
     );
 
     if (!assignments) {

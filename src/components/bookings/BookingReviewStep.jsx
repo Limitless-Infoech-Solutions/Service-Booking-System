@@ -2,6 +2,34 @@
 
 import { ArrowRight, CalendarDays, Clock3 } from "lucide-react";
 import { useState } from "react";
+
+function formatClockTime(value) {
+  if (!/^\d{2}:\d{2}$/.test(value || "")) return value || "—";
+  const [hours, minutes] = value.split(":").map(Number);
+  if (hours > 23 || minutes > 59) return "—";
+  const period = hours >= 12 ? "PM" : "AM";
+  return `${hours % 12 || 12}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+function addMinutesToClockTime(value, minutesToAdd) {
+  if (!/^\d{2}:\d{2}$/.test(value || "")) return "—";
+  const [hours, minutes] = value.split(":").map(Number);
+  const totalMinutes = (hours * 60 + minutes + minutesToAdd) % (24 * 60);
+  return formatClockTime(`${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`);
+}
+
+function formatAppointmentTimestamp(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleTimeString("en-US", {
+    timeZone: "Asia/Kolkata",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 export default function BookingReviewStep({
   customer,
   selectedServices,
@@ -82,13 +110,7 @@ const handleConfirmBooking = async () => {
 
   const firstName = customer?.name?.trim()?.split(" ")[0] || "there";
   const assignmentByService = new Map(assignments.map((item) => [item.service_id, item]));
-  const appointmentEndTime = selectedTime
-    ? (() => {
-        const [hour, minute] = selectedTime.split(":").map(Number);
-        const end = new Date(2000, 0, 1, hour, minute + totalDuration);
-        return end.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
-      })()
-    : "—";
+  const appointmentEndTime = addMinutesToClockTime(selectedTime, totalDuration);
 
   return (
     <div className="w-full">
@@ -134,7 +156,7 @@ const handleConfirmBooking = async () => {
                       {service.qty > 1 ? ` × ${service.qty}` : ""}
                     </p>
                     {adminMode && <p className="mt-1 text-sm text-slate-600">Staff: {assignmentByService.get(service.id)?.staff_name || "Assignment not available"}</p>}
-                    {adminMode && assignmentByService.get(service.id)?.start_time && <p className="mt-1 text-xs text-slate-500">{new Date(assignmentByService.get(service.id).start_time).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}–{new Date(assignmentByService.get(service.id).end_time).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}</p>}
+                    {adminMode && assignmentByService.get(service.id)?.start_time && <p className="mt-1 text-xs text-slate-500">{formatAppointmentTimestamp(assignmentByService.get(service.id).start_time)}–{formatAppointmentTimestamp(assignmentByService.get(service.id).end_time)}</p>}
                   </div>
 
                   <p className="shrink-0 text-sm font-semibold text-slate-900">
@@ -180,7 +202,7 @@ const handleConfirmBooking = async () => {
                 </p>
 
                 <p className="mt-1 text-sm font-medium text-slate-900">
-                  {selectedTime || "—"} {adminMode && selectedTime ? `– ${appointmentEndTime}` : ""}
+                  {formatClockTime(selectedTime)} {adminMode && selectedTime ? `– ${appointmentEndTime}` : ""}
                 </p>
               </div>
             </div>

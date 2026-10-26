@@ -165,9 +165,13 @@ export function getFreeIntervals(startMs, endMs, blockedIntervals) {
 export const MAX_SERVICES_PER_BOOKING = 5;
 
 export function getServiceIdsError(ids) {
-  if (!Array.isArray(ids) || ids.length === 0) return "At least one service is required.";
-  if (ids.some((id) => typeof id !== "string" || !id.trim())) return "service_ids must be a list of service IDs.";
-  if (ids.length > MAX_SERVICES_PER_BOOKING) return `At most ${MAX_SERVICES_PER_BOOKING} services can be booked at once.`;
-  if (new Set(ids).size !== ids.length) return "Each service can only be selected once.";
+  if (!Array.isArray(ids) || ids.length === 0)
+    return "At least one service is required.";
+  if (ids.some((id) => typeof id !== "string" || !id.trim()))
+    return "service_ids must be a list of service IDs.";
+  if (ids.length > MAX_SERVICES_PER_BOOKING)
+    return `At most ${MAX_SERVICES_PER_BOOKING} services can be booked at once.`;
+  if (new Set(ids).size !== ids.length)
+    return "Each service can only be selected once.";
   return null;
 }
