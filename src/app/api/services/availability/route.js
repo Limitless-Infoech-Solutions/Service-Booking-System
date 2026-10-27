@@ -24,6 +24,7 @@ export async function GET(request) {
     let businessId = searchParams.get("business_id");
     let bookingClient = supabase;
     const requestedTime = searchParams.get("time");
+    const rescheduleAppointmentId = searchParams.get("reschedule_appointment_id");
     if (isAdminMode) {
       adminContext = await authorizeBusinessAdmin(
         request,
@@ -38,6 +39,22 @@ export async function GET(request) {
       businessId = adminContext.businessId;
       bookingClient = adminContext.supabase;
       respond = (body, init) => adminJson(adminContext, body, init);
+    }
+    if (rescheduleAppointmentId) {
+      if (!isAdminMode) {
+        return respond({ error: "Appointment exclusion is available only to admins." }, { status: 403 });
+      }
+      const { data: targetAppointment, error: targetError } = await bookingClient
+        .from("appointments")
+        .select("id, status")
+        .eq("id", rescheduleAppointmentId)
+        .eq("business_id", businessId)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!targetAppointment) return respond({ error: "Appointment not found." }, { status: 404 });
+      if (targetAppointment.status !== "confirmed") {
+        return respond({ error: "Only confirmed appointments can be rescheduled." }, { status: 409 });
+      }
     }
     const serviceIdsParam = searchParams.get("services");
 
@@ -303,8 +320,7 @@ export async function GET(request) {
 
     // 5. Add existing appointment blocks.
     // Confirmed appointments consume staff capacity.
-    const { data: appointmentItems, error: appointmentItemsError } =
-      await bookingClient
+    let appointmentQuery = bookingClient
         .from("appointment_services")
         .select(
           ` 
@@ -312,14 +328,18 @@ export async function GET(request) {
         start_time, 
         end_time, 
         buffer_minutes, 
-        appointments!inner(status, business_id) 
+        appointments!inner(id, status, business_id)
       `
         )
         .in("staff_id", eligibleStaffIds)
         .eq("appointments.business_id", businessId)
-        .eq("appointments.status", "confirmed")
+        .in("appointments.status", ["confirmed", "arrived", "in_service"])
         .lt("start_time", queryWindowEndIso)
         .gt("end_time", queryWindowStartIso);
+    if (rescheduleAppointmentId) {
+      appointmentQuery = appointmentQuery.neq("appointments.id", rescheduleAppointmentId);
+    }
+    const { data: appointmentItems, error: appointmentItemsError } = await appointmentQuery;
 
     if (appointmentItemsError) {
       console.error(
@@ -362,7 +382,7 @@ export async function GET(request) {
         start_time, 
         end_time, 
         buffer_minutes, 
-        booking_holds!inner(expires_at, status, business_id) 
+        booking_holds!inner(expires_at, status, business_id, reschedule_appointment_id)
       `
       )
       .in("staff_id", eligibleStaffIds)
@@ -384,6 +404,7 @@ export async function GET(request) {
     }
 
     for (const item of holdItems || []) {
+      if (rescheduleAppointmentId && item.booking_holds?.reschedule_appointment_id === rescheduleAppointmentId) continue;
       const blockedList = blockedIntervalsByStaff.get(item.staff_id);
 
       if (!blockedList) {

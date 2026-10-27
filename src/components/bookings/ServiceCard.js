@@ -44,6 +44,9 @@ export default function ServiceCard({ service, selected, onSelect }) {
 
   const category = categoryMeta[service.category] ?? categoryMeta.Others;
   const CategoryIcon = ICONS[category.icon];
+  const imageSrc = typeof service.image === "string" && service.image.trim()
+    ? service.image.trim()
+    : null;
 
   return (
     <motion.article
@@ -60,14 +63,23 @@ export default function ServiceCard({ service, selected, onSelect }) {
         className="relative aspect-[1.35/1] cursor-pointer overflow-hidden"
         onClick={() => onSelect(service)}
       >
-        <Image
-          src={service.image}
-          alt={service.name}
-          fill
-          preload
-          sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw"
-          className="object-cover transition-transform duration-500 group-hover:scale-105"
-        />
+        {imageSrc ? (
+          <Image
+            src={imageSrc}
+            alt={service.name}
+            fill
+            preload
+            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw"
+            className="object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 flex items-center justify-center bg-linear-to-br from-slate-100 via-stone-100 to-slate-200"
+          >
+            <Sparkles className="h-10 w-10 text-slate-400" strokeWidth={1.4} />
+          </div>
+        )}
 
         {/* Badge */}
         {badge && (

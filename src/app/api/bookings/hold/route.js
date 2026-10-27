@@ -45,6 +45,21 @@ function setBookingHoldCookie(response, holdId, isAdminMode = false) {
   return response;
 }
 
+function setBookAgainHoldCookie(response, appointmentId, holdId) {
+  response.cookies.set(
+    "book_again_flow_hold",
+    appointmentId && holdId ? `${appointmentId}:${holdId}` : "",
+    {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: appointmentId && holdId ? HOLD_DURATION_MINUTES * 60 : 0,
+    }
+  );
+  return response;
+}
+
 export async function GET(request) {
   let adminContext = null;
   try {
@@ -149,7 +164,12 @@ export async function DELETE(request) {
     } catch {
       return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
     }
-    const { hold_id: holdId, admin_mode: isAdminMode = false } = body || {};
+    const {
+      hold_id: holdId,
+      admin_mode: isAdminMode = false,
+      reschedule_appointment_id: rescheduleAppointmentId,
+      book_again_appointment_id: bookAgainAppointmentId,
+    } = body || {};
     if (typeof holdId !== "string" || !holdId || typeof isAdminMode !== "boolean") {
       return NextResponse.json({ error: "A valid hold_id and admin_mode are required." }, { status: 400 });
     }
@@ -160,6 +180,10 @@ export async function DELETE(request) {
         { success: false, error: "Booking hold does not belong to this browser flow." },
         { status: 409 }
       );
+    }
+    const bookAgainCookie = request.cookies.get("book_again_flow_hold")?.value || "";
+    if (!bookAgainAppointmentId && bookAgainCookie.endsWith(`:${holdId}`)) {
+      return NextResponse.json({ success: false, error: "Provide the Book Again appointment ID to release this hold." }, { status: 400 });
     }
 
     let client = supabase;
@@ -173,11 +197,54 @@ export async function DELETE(request) {
       businessId = adminContext.businessId;
     }
 
+    if (bookAgainAppointmentId) {
+      if (!isAdminMode || !adminContext || rescheduleAppointmentId) {
+        return NextResponse.json({ success: false, error: "Book Again is available only as a separate admin booking." }, { status: 403 });
+      }
+      const operationCookie = request.cookies.get("book_again_flow_hold")?.value;
+      if (operationCookie !== `${bookAgainAppointmentId}:${holdId}`) {
+        return adminJson(adminContext, { success: false, error: "This hold does not belong to this Book Again operation." }, { status: 409 });
+      }
+    }
+
+    const { data: hold, error: holdError } = await client
+      .from("booking_holds")
+      .select("id, reschedule_appointment_id, source_appointment_id, customer_id")
+      .eq("id", holdId)
+      .eq("business_id", businessId)
+      .maybeSingle();
+    if (holdError) throw holdError;
+    if (
+      !hold ||
+      (hold.reschedule_appointment_id || null) !== (rescheduleAppointmentId || null) ||
+      (hold.source_appointment_id || null) !== (bookAgainAppointmentId || null)
+    ) {
+      const body = { success: false, error: "Booking hold does not match this release operation." };
+      return adminContext ? adminJson(adminContext, body, { status: 409 }) : NextResponse.json(body, { status: 409 });
+    }
+    if (rescheduleAppointmentId && !adminContext) {
+      return NextResponse.json({ success: false, error: "Admin authorization is required." }, { status: 403 });
+    }
+
+    if (bookAgainAppointmentId) {
+      const { data: sourceAppointment, error: sourceError } = await client
+        .from("appointments")
+        .select("id, customer_id")
+        .eq("id", bookAgainAppointmentId)
+        .eq("business_id", businessId)
+        .maybeSingle();
+      if (sourceError) throw sourceError;
+      if (!sourceAppointment || sourceAppointment.customer_id !== hold.customer_id) {
+        return adminJson(adminContext, { success: false, error: "This hold does not match the original appointment customer." }, { status: 409 });
+      }
+    }
+
     const released = await expireActiveHold(client, holdId, businessId);
     const response = adminContext
       ? adminJson(adminContext, { success: true, released })
       : NextResponse.json({ success: true, released });
     response.cookies.set("booking_flow_hold", "", { path: "/", maxAge: 0 });
+    if (bookAgainAppointmentId) setBookAgainHoldCookie(response, null, null);
     return response;
   } catch (error) {
     console.error("Booking hold release error:", { code: error?.code || null });
@@ -195,13 +262,16 @@ export async function POST(request) {
 
     const {
       business_id: requestedBusinessId,
-      customer_id: customerId,
+      customer_id: requestedCustomerId,
       date,
       time,
       service_ids: serviceIds,
       admin_mode: isAdminMode = false,
       staff_assignments: requestedStaffAssignments,
     } = body;
+    let customerId = requestedCustomerId;
+    const rescheduleAppointmentId = body.reschedule_appointment_id || null;
+    const bookAgainAppointmentId = body.book_again_appointment_id || null;
     let businessId = requestedBusinessId;
     let bookingClient = supabase;
     let adminContext = null;
@@ -219,6 +289,46 @@ export async function POST(request) {
       }
       businessId = adminContext.businessId;
       bookingClient = adminContext.supabase;
+    }
+
+    if (bookAgainAppointmentId) {
+      if (!isAdminMode || !adminContext || rescheduleAppointmentId) {
+        return NextResponse.json({ error: "Book Again is available only as a separate admin booking." }, { status: 403 });
+      }
+      const { data: sourceAppointment, error: sourceError } = await bookingClient
+        .from("appointments")
+        .select("id, business_id, customer_id")
+        .eq("id", bookAgainAppointmentId)
+        .eq("business_id", businessId)
+        .maybeSingle();
+      if (sourceError) throw sourceError;
+      if (!sourceAppointment) return adminJson(adminContext, { error: "Original appointment not found." }, { status: 404 });
+      if (requestedCustomerId && requestedCustomerId !== sourceAppointment.customer_id) {
+        return adminJson(adminContext, { error: "Book Again must use the original appointment customer." }, { status: 400 });
+      }
+      businessId = sourceAppointment.business_id;
+      customerId = sourceAppointment.customer_id;
+    }
+
+    if (rescheduleAppointmentId) {
+      if (!isAdminMode || !adminContext) {
+        return NextResponse.json({ error: "Admin authorization is required." }, { status: 403 });
+      }
+      const { data: targetAppointment, error: targetError } = await bookingClient
+        .from("appointments")
+        .select("id, business_id, customer_id, status")
+        .eq("id", rescheduleAppointmentId)
+        .eq("business_id", businessId)
+        .maybeSingle();
+      if (targetError) throw targetError;
+      if (!targetAppointment) return adminJson(adminContext, { error: "Appointment not found." }, { status: 404 });
+      if (targetAppointment.status !== "confirmed") {
+        return adminJson(adminContext, { error: "Only confirmed appointments can be rescheduled." }, { status: 409 });
+      }
+      if (customerId && customerId !== targetAppointment.customer_id) {
+        return adminJson(adminContext, { error: "The reschedule customer cannot be changed." }, { status: 400 });
+      }
+      customerId = targetAppointment.customer_id;
     }
 
     // --------------------------------------------------
@@ -250,6 +360,14 @@ export async function POST(request) {
         },
         { status: 400 }
       );
+    }
+
+    if (serviceIds.length > 5) {
+      return NextResponse.json({ error: "A maximum of 5 services can be booked at once." }, { status: 400 });
+    }
+
+    if (new Set(serviceIds.map((id) => String(id))).size !== serviceIds.length) {
+      return NextResponse.json({ error: "Each service can only be selected once." }, { status: 400 });
     }
 
     if (!isValidDate(date)) {
@@ -439,7 +557,7 @@ export async function POST(request) {
       const { data: flowHold, error: flowHoldError } = await bookingClient
         .from("booking_holds")
         .select(
-          "id, business_id, customer_id, status, expires_at, booking_hold_services(service_id, staff_id, start_time, end_time)"
+          "id, business_id, customer_id, status, expires_at, source_appointment_id, reschedule_appointment_id, booking_hold_services(service_id, staff_id, start_time, end_time)"
         )
         .eq("id", flowHoldId)
         .eq("business_id", businessId)
@@ -465,7 +583,17 @@ export async function POST(request) {
         const savedByService = new Map(
           savedItems.map((item) => [item.service_id, item])
         );
+        const bookAgainCookie = request.cookies.get("book_again_flow_hold")?.value || "";
+        const persistedSourceAppointmentId = flowHold.source_appointment_id || null;
+        const persistedRescheduleAppointmentId = flowHold.reschedule_appointment_id || null;
+        const sameOperation = rescheduleAppointmentId
+          ? persistedRescheduleAppointmentId === rescheduleAppointmentId && !persistedSourceAppointmentId
+          : bookAgainAppointmentId
+            ? persistedSourceAppointmentId === bookAgainAppointmentId && !persistedRescheduleAppointmentId && bookAgainCookie === `${bookAgainAppointmentId}:${flowHold.id}`
+            : !persistedSourceAppointmentId && !persistedRescheduleAppointmentId && !bookAgainCookie.endsWith(`:${flowHold.id}`);
         let exactSchedule =
+          sameOperation &&
+          flowHold.customer_id === (customerId ?? null) &&
           flowMode === (isAdminMode ? "admin" : "customer") &&
           savedItems.length === orderedServices.length &&
           orderedServices.every((service) => {
@@ -504,9 +632,12 @@ export async function POST(request) {
         }
 
         if (!exactSchedule) {
-          if (flowMode !== (isAdminMode ? "admin" : "customer")) {
+          if (
+            flowMode !== (isAdminMode ? "admin" : "customer") ||
+            !sameOperation
+          ) {
             return NextResponse.json(
-              { error: "An active hold belongs to another booking flow.", code: "ACTIVE_FLOW_HOLD" },
+              { error: "An active hold belongs to another booking operation. Release or finish it before continuing.", code: "ACTIVE_FLOW_HOLD" },
               { status: 409 }
             );
           }
@@ -541,7 +672,8 @@ export async function POST(request) {
             maxAge: HOLD_DURATION_MINUTES * 60,
           });
           }
-          return setBookingHoldCookie(response, flowHold.id, isAdminMode);
+          setBookingHoldCookie(response, flowHold.id, isAdminMode);
+          return setBookAgainHoldCookie(response, bookAgainAppointmentId, flowHold.id);
         }
       }
     }
@@ -714,8 +846,7 @@ export async function POST(request) {
     // PART 12 — Existing appointments
     // --------------------------------------------------
 
-    const { data: appointmentItems, error: appointmentItemsError } =
-      await bookingClient
+    let appointmentQuery = bookingClient
         .from("appointment_services")
         .select(
           `
@@ -724,6 +855,7 @@ export async function POST(request) {
         end_time,
         buffer_minutes,
         appointments!inner(
+          id,
           status,
           business_id
         )
@@ -731,9 +863,13 @@ export async function POST(request) {
         )
         .in("staff_id", eligibleStaffIds)
         .eq("appointments.business_id", businessId)
-        .eq("appointments.status", "confirmed")
+        .in("appointments.status", ["confirmed", "arrived", "in_service"])
         .lt("start_time", queryWindowEndIso)
         .gt("end_time", queryWindowStartIso);
+    if (rescheduleAppointmentId) {
+      appointmentQuery = appointmentQuery.neq("appointments.id", rescheduleAppointmentId);
+    }
+    const { data: appointmentItems, error: appointmentItemsError } = await appointmentQuery;
 
     if (appointmentItemsError) {
       console.error(
@@ -771,7 +907,7 @@ export async function POST(request) {
 
     const nowIso = new Date().toISOString();
 
-    const { data: holdItems, error: holdItemsError } = await bookingClient
+    let holdQuery = bookingClient
       .from("booking_hold_services")
       .select(
         `
@@ -782,7 +918,8 @@ export async function POST(request) {
         booking_holds!inner(
           expires_at,
           status,
-          business_id
+          business_id,
+          reschedule_appointment_id
         )
         `
       )
@@ -792,6 +929,7 @@ export async function POST(request) {
       .gt("booking_holds.expires_at", nowIso)
       .lt("start_time", queryWindowEndIso)
       .gt("end_time", queryWindowStartIso);
+    const { data: holdItems, error: holdItemsError } = await holdQuery;
 
     if (holdItemsError) {
       console.error("Hold conflict lookup failed:", holdItemsError);
@@ -805,6 +943,7 @@ export async function POST(request) {
     }
 
     for (const item of holdItems || []) {
+      if (rescheduleAppointmentId && item.booking_holds?.reschedule_appointment_id === rescheduleAppointmentId) continue;
       const blockedList = blockedIntervalsByStaff.get(item.staff_id);
 
       if (!blockedList) {
@@ -932,35 +1071,60 @@ export async function POST(request) {
     // Its database-side concurrency guarantees are defined by the
     // existing Supabase function, not by this route.
     // --------------------------------------------------
-    console.log("🔥 RPC FUNCTION BEING CALLED: create_atomic_booking_hold_v2");
-
-    const { data: rpcData, error: rpcError } = await bookingClient.rpc(
-      "create_atomic_booking_hold_v2",
-      {
-        p_business_id: businessId,
-
-        p_customer_id: customerId ?? null,
-
-        p_expires_at: holdExpiresAt,
-
-        p_total_amount: totalAmount,
-
-        p_items: holdItemsPayload,
-      }
-    );
+    const rpcName = rescheduleAppointmentId
+      ? "create_reschedule_booking_hold"
+      : bookAgainAppointmentId
+        ? "create_book_again_booking_hold"
+        : "create_atomic_booking_hold_v2";
+    const rpcArgs = rescheduleAppointmentId
+      ? {
+          p_appointment_id: rescheduleAppointmentId,
+          p_total_amount: totalAmount,
+          p_items: holdItemsPayload,
+        }
+      : bookAgainAppointmentId
+        ? {
+            p_source_appointment_id: bookAgainAppointmentId,
+            p_expires_at: holdExpiresAt,
+            p_total_amount: totalAmount,
+            p_items: holdItemsPayload,
+          }
+      : {
+          p_business_id: businessId,
+          p_customer_id: customerId ?? null,
+          p_expires_at: holdExpiresAt,
+          p_total_amount: totalAmount,
+          p_items: holdItemsPayload,
+        };
+    const { data: rpcData, error: rpcError } = await bookingClient.rpc(rpcName, rpcArgs);
     console.log("RPC DATA:", rpcData);
     console.log("RPC ERROR:", rpcError);
     if (rpcError) {
       console.error("Atomic booking hold failed:", rpcError);
 
       if (rpcError.code === "23P01") {
-        return NextResponse.json(
+        const body =
           {
             error: "The selected time is no longer available.",
             code: "SLOT_UNAVAILABLE",
-          },
-          { status: 409 }
-        );
+          };
+        return adminContext
+          ? adminJson(adminContext, body, { status: 409 })
+          : NextResponse.json(body, { status: 409 });
+      }
+
+      if (rescheduleAppointmentId) {
+        return adminJson(adminContext, {
+          error: "Unable to reserve the reschedule. Review the services, staff, and selected time.",
+          code: "RESCHEDULE_HOLD_FAILED",
+        }, { status: ["42501", "P0002"].includes(rpcError.code) ? 403 : 409 });
+      }
+
+      if (bookAgainAppointmentId) {
+        return adminJson(adminContext, {
+          error: "Unable to reserve the new appointment. Review the services, staff, and selected time.",
+          code: "BOOK_AGAIN_HOLD_FAILED",
+        }, { status: ["42501", "P0002"].includes(rpcError.code) ? 403 : 409 });
       }
 
       return NextResponse.json(
@@ -989,9 +1153,7 @@ export async function POST(request) {
     if (isAdminMode) {
       const { data: savedItems, error: savedItemsError } = await bookingClient
         .from("booking_hold_services")
-        .select(
-          "service_id, staff_id, start_time, end_time, booking_holds!inner(id, business_id)"
-        )
+        .select("service_id, staff_id, start_time, end_time, booking_holds!inner(id, business_id, reschedule_appointment_id, source_appointment_id)")
         .eq("booking_holds.id", rpcData[0].hold_id)
         .eq("booking_holds.business_id", businessId);
       if (savedItemsError) throw savedItemsError;
@@ -1013,7 +1175,11 @@ export async function POST(request) {
               new Date(expected.end_time).getTime()
           );
         });
-      if (!storedExactly) {
+      const correctHoldType = (savedItems || []).every((item) =>
+        item.booking_holds?.reschedule_appointment_id === (rescheduleAppointmentId || null) &&
+        item.booking_holds?.source_appointment_id === (bookAgainAppointmentId || null)
+      );
+      if (!storedExactly || !correctHoldType) {
         return NextResponse.json(
           {
             error:
@@ -1046,6 +1212,7 @@ export async function POST(request) {
       expiresAt: holdExpiresAt,
 
       totalAmount,
+      rescheduleAppointmentId,
 
       date,
 
@@ -1075,13 +1242,12 @@ export async function POST(request) {
         path: "/",
         maxAge: HOLD_DURATION_MINUTES * 60,
       });
-      return setBookingHoldCookie(response, holdResponse.holdId, true);
+      setBookingHoldCookie(response, holdResponse.holdId, true);
+      return setBookAgainHoldCookie(response, bookAgainAppointmentId, holdResponse.holdId);
     }
-    return setBookingHoldCookie(
-      NextResponse.json(holdResponse, { status: 201 }),
-      holdResponse.holdId,
-      false
-    );
+    const response = NextResponse.json(holdResponse, { status: 201 });
+    setBookingHoldCookie(response, holdResponse.holdId, false);
+    return setBookAgainHoldCookie(response, null, null);
   } catch (error) {
     console.error("Booking hold API error:", error);
 

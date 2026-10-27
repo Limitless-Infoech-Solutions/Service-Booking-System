@@ -16,6 +16,9 @@ export default function ServiceSelectionStep({
   isLoadingServices,
   limitNotice,
   maxServices,
+  eyebrow = "Book an appointment",
+  title = "Select your services",
+  description = "Pamper yourself with expert care. Choose one or more services and continue to the next step.",
 }) {
   return (
     <>
@@ -23,16 +26,15 @@ export default function ServiceSelectionStep({
       <div className="grid grid-cols-1 items-center gap-6 md:grid-cols-[minmax(0,1fr)_auto]">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#6862b5] sm:text-xs">
-            Book an appointment
+            {eyebrow}
           </p>
 
           <h1 className="mt-2 text-4xl font-medium tracking-[-0.04em] text-slate-900 sm:text-5xl">
-            Select your services
+            {title}
           </h1>
 
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
-            Pamper yourself with expert care. Choose one or more services and
-            continue to the next step.
+            {description}
           </p>
         </div>
 
@@ -91,6 +93,12 @@ export default function ServiceSelectionStep({
         </button>
       </div>
 
+      {limitNotice ? (
+        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">
+          {limitNotice}
+        </p>
+      ) : null}
+
       {/* Services */}
       <div className="mt-7">
       
@@ -99,7 +107,7 @@ export default function ServiceSelectionStep({
             <ServiceCard
               key={service.id}
               service={service}
-              selected={selectedServices.some((item) => item.id === service.id)}
+              selected={selectedServices.some((item) => String(item.id) === String(service.id))}
               onSelect={onSelectService}
             />
           ))}

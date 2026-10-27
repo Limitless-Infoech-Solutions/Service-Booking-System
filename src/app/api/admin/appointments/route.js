@@ -135,10 +135,47 @@ export async function GET(request) {
       return `${name} ${phone}`.toLocaleLowerCase("en-IN").includes(search);
     });
 
+    const appointmentIds = data.map((appointment) => appointment.id);
+    let historyEventsAvailable = true;
+    const eventTypesByAppointment = new Map();
+    if (appointmentIds.length) {
+      const { data: events, error: eventsError } = await context.supabase.rpc(
+        "get_admin_appointment_event_types",
+        {
+          p_business_id: businessId,
+          p_appointment_ids: appointmentIds,
+        }
+      );
+
+      if (eventsError) {
+        // Keep the table usable if the scoped event-read grant/policy has not
+        // been configured. Expose the state so missing events are not implied.
+        console.error("Appointment event lookup failed:", {
+          code: eventsError.code || null,
+          message: eventsError.message || null,
+        });
+        historyEventsAvailable = false;
+      } else {
+        for (const event of events || []) {
+          const types = eventTypesByAppointment.get(event.appointment_id) || new Set();
+          types.add(event.event_type);
+          eventTypesByAppointment.set(event.appointment_id, types);
+        }
+      }
+    }
+
+    const appointmentsWithHistory = data.map((appointment) => ({
+      ...appointment,
+      history_event_types: historyEventsAvailable
+        ? [...(eventTypesByAppointment.get(appointment.id) || [])]
+        : null,
+    }));
+
     return adminJson(context, {
       date,
-      appointments: data,
+      appointments: appointmentsWithHistory,
       total: data.length,
+      historyEventsAvailable,
     });
   } catch (error) {
     console.error("Unexpected appointments API error:", error);

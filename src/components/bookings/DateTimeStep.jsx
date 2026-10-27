@@ -84,6 +84,7 @@ export default function DateTimeStep({
   onSelectTime,
   serviceIds,
   adminMode = false,
+  rescheduleAppointmentId = null,
   onAssignmentOptionsChange,
 }) {
   const today = useMemo(
@@ -201,6 +202,7 @@ export default function DateTimeStep({
         });
         if (adminMode) params.set("mode", "admin");
         else params.set("business_id", BUSINESS_ID);
+        if (adminMode && rescheduleAppointmentId) params.set("reschedule_appointment_id", rescheduleAppointmentId);
         const response = await fetch(
           `/api/services/availability?${params.toString()}`,
           { signal: controller.signal }
@@ -241,7 +243,7 @@ export default function DateTimeStep({
 
     fetchAvailability();
     return () => controller.abort();
-  }, [adminMode, availabilityKey, retryCount, selectedDateString, serviceIdsKey]);
+  }, [adminMode, availabilityKey, retryCount, selectedDateString, serviceIdsKey, rescheduleAppointmentId]);
 
   useEffect(() => {
     if (!adminMode || !selectedDateString || !serviceIdsKey || !selectedTime) {
@@ -257,6 +259,7 @@ export default function DateTimeStep({
           date: selectedDateString,
           services: serviceIdsKey,
           time: selectedTime,
+          ...(rescheduleAppointmentId ? { reschedule_appointment_id: rescheduleAppointmentId } : {}),
         });
         const response = await fetch(`/api/services/availability?${params.toString()}`, { signal: controller.signal });
         const data = await response.json();
@@ -269,7 +272,7 @@ export default function DateTimeStep({
     }
     fetchAssignmentOptions();
     return () => controller.abort();
-  }, [adminMode, availabilityKey, onAssignmentOptionsChange, selectedTime, selectedDateString, serviceIdsKey]);
+  }, [adminMode, availabilityKey, onAssignmentOptionsChange, selectedTime, selectedDateString, serviceIdsKey, rescheduleAppointmentId]);
 
   // This check is separate from fetching, so changing time never refetches.
   useEffect(() => {

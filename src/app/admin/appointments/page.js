@@ -68,6 +68,7 @@ export default function AppointmentsPage() {
   const [selectedDate, setSelectedDate] = useState(() => todayInBusinessZone());
   const [windowStart, setWindowStart] = useState(() => todayInBusinessZone());
   const [appointments, setAppointments] = useState([]);
+  const [historyEventsAvailable, setHistoryEventsAvailable] = useState(true);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -106,12 +107,14 @@ export default function AppointmentsPage() {
         if (!response.ok)
           throw new Error(result.error || "Failed to load appointments.");
         setAppointments(result.appointments || []);
+        setHistoryEventsAvailable(result.historyEventsAvailable !== false);
         setError("");
       })
       .catch((loadError) => {
         if (loadError.name !== "AbortError") {
           setError(loadError.message || "Failed to load appointments.");
           setAppointments([]);
+          setHistoryEventsAvailable(false);
         }
       })
       .finally(() => {
@@ -349,6 +352,12 @@ export default function AppointmentsPage() {
         </span>
       </div>
 
+      {!historyEventsAvailable && !error && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Appointment history badges are unavailable because the secure event lookup is not configured.
+        </p>
+      )}
+
       {error ? (
         <div
           role="alert"
@@ -384,9 +393,21 @@ export default function AppointmentsPage() {
               >
                 <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
                   <div className="min-w-40">
-                    <h2 className="font-semibold text-slate-900">
-                      {appointment.customers?.name || "Unknown customer"}
-                    </h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="font-semibold text-slate-900">
+                        {appointment.customers?.name || "Unknown customer"}
+                      </h2>
+                      {(appointment.history_event_types || []).includes("rescheduled") && (
+                        <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">
+                          Rescheduled
+                        </span>
+                      )}
+                      {(appointment.history_event_types || []).includes("booked_again") && (
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
+                          Booked Again
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-1 text-sm text-slate-500">
                       {appointment.customers?.phone || "No phone number"}
                     </p>

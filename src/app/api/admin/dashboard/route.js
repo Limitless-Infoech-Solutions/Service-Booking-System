@@ -82,6 +82,7 @@ export async function GET(request) {
       .from("appointments")
       .select(APPOINTMENT_DETAILS)
       .eq("business_id", context.businessId)
+      .eq("status", "completed")
       .order("created_at", { ascending: false })
       .limit(5);
 

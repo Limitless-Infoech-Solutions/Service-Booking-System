@@ -162,6 +162,8 @@ export default function AppointmentPage() {
   // ==================================================
 
   const [authenticatedCustomer, setAuthenticatedCustomer] = useState(null);
+  const [prefillCustomer, setPrefillCustomer] = useState(null);
+  const [bookAgainAppointmentId, setBookAgainAppointmentId] = useState(null);
 
   const [contact, setContact] = useState({
     name: "",
@@ -232,7 +234,11 @@ export default function AppointmentPage() {
         const response = await fetch("/api/bookings/hold", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ hold_id: savedHold.holdId, admin_mode: savedHold.adminMode === true }),
+          body: JSON.stringify({
+            hold_id: savedHold.holdId,
+            admin_mode: savedHold.adminMode === true,
+            ...(savedHold.bookAgainAppointmentId ? { book_again_appointment_id: savedHold.bookAgainAppointmentId } : {}),
+          }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.success) throw new Error(result.error || "Hold release failed.");
@@ -263,7 +269,11 @@ export default function AppointmentPage() {
         void fetch("/api/bookings/hold", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ hold_id: savedHold.holdId, admin_mode: savedHold.adminMode === true }),
+          body: JSON.stringify({
+            hold_id: savedHold.holdId,
+            admin_mode: savedHold.adminMode === true,
+            ...(savedHold.bookAgainAppointmentId ? { book_again_appointment_id: savedHold.bookAgainAppointmentId } : {}),
+          }),
           keepalive: true,
         });
       } catch (error) {
@@ -281,6 +291,44 @@ export default function AppointmentPage() {
     draftRestoreStartedRef.current = modeKey;
 
     async function restoreDraft() {
+      const prefillAppointmentId = isAdminMode
+        ? new URLSearchParams(window.location.search).get("prefill_appointment_id")
+        : null;
+      if (prefillAppointmentId) {
+        try {
+          const savedHold = JSON.parse(sessionStorage.getItem("bookingHold") || "null");
+          if (savedHold?.holdId) {
+            if (savedHold.adminMode === true && savedHold.bookAgainAppointmentId === prefillAppointmentId) {
+              const released = await releaseCurrentBookingHold();
+              if (!released) throw new Error("Release the previous Book Again hold before starting again.");
+            } else {
+              throw new Error("Another booking operation has an active hold. Finish or release it before starting Book Again.");
+            }
+          }
+          const response = await fetch(`/api/admin/appointments/${encodeURIComponent(prefillAppointmentId)}`, { cache: "no-store" });
+          const result = await response.json();
+          if (!response.ok || !result.appointment) throw new Error(result.error || "Unable to load the appointment to book again.");
+          const source = result.appointment;
+          setBookAgainAppointmentId(source.id);
+          const sourceIds = [...(source.appointment_services || [])]
+            .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
+            .map((item) => item.service_id);
+          setSelectedServices([...new Map(sourceIds.map((id) => [String(id), services.find((service) => String(service.id) === String(id))]).filter(([, service]) => service)).values()]);
+          setPrefillCustomer(source.customers || null);
+          setAuthenticatedCustomer(source.customers || null);
+          setContact({ name: source.customers?.name || "", phone: source.customers?.phone || "", email: source.customers?.email || "" });
+          setSelectedDate(null);
+          setSelectedTime(null);
+          setStep(1);
+          setIsDraftRestored(true);
+          return;
+        } catch (error) {
+          console.error("Book Again prefill error:", error);
+          toast.error(error.message || "Unable to prefill this appointment.");
+          setIsDraftRestored(true);
+          return;
+        }
+      }
       let draft = null;
       let savedHold = null;
       try {
@@ -355,7 +403,7 @@ export default function AppointmentPage() {
     }
 
     restoreDraft();
-  }, [isAdminMode, isLoadingServices, services]);
+  }, [isAdminMode, isLoadingServices, services, releaseCurrentBookingHold]);
 
   useEffect(() => {
     if (!isDraftRestored) return;
@@ -598,6 +646,7 @@ const handleSelectService = (service) => {
         body: JSON.stringify({
           ...(adminMode ? {} : { business_id: BUSINESS_ID }),
           ...(adminMode ? { admin_mode: true } : {}),
+          ...(adminMode && bookAgainAppointmentId ? { book_again_appointment_id: bookAgainAppointmentId } : {}),
           ...(staffAssignments ? { staff_assignments: staffAssignments } : {}),
           service_ids: selectedServices.map((service) => service.id),
           date: dateString,
@@ -627,10 +676,16 @@ const handleSelectService = (service) => {
         startTime: selectedTime,
         allocations: allocationDetails,
         adminMode,
+        bookAgainAppointmentId: adminMode ? bookAgainAppointmentId : null,
       }));
       setHoldExpiresAt(data.expiresAt);
       setIsAssignmentModalOpen(false);
-      setIsAuthModalOpen(true);
+      if (adminMode && prefillCustomer?.id) {
+        setIsAuthModalOpen(false);
+        setStep(3);
+      } else {
+        setIsAuthModalOpen(true);
+      }
     } catch (error) {
       console.error("Appointment hold error:", error);
       alert("Something went wrong while reserving your appointment. Please try again.");
@@ -893,20 +948,45 @@ const handleSelectService = (service) => {
       // CONVERT HOLD → APPOINTMENT
       // --------------------------------------------------
 
-      const response = await fetch("/api/appointments/confirm", {
+      const confirmBody = {
+        hold_id: hold.holdId,
+        ...(isAdminMode ? { admin_mode: true } : {}),
+        ...(isAdminMode && hold.bookAgainAppointmentId ? { book_again_appointment_id: hold.bookAgainAppointmentId } : {}),
+      };
+      let response;
+      try {
+        response = await fetch("/api/appointments/confirm", {
         method: "POST",
-
         headers: {
           "Content-Type": "application/json",
         },
+          body: JSON.stringify(confirmBody),
+        });
+      } catch (networkError) {
+        if (!hold.bookAgainAppointmentId) throw networkError;
+        // The first response may have been lost after commit. The confirmation
+        // endpoint recognizes an already-converted hold for this operation.
+        response = await fetch("/api/appointments/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(confirmBody),
+        });
+      }
 
-        body: JSON.stringify({
-          hold_id: hold.holdId,
-          ...(isAdminMode ? { admin_mode: true } : {}),
-        }),
-      });
-
-      const data = await response.json();
+      let data = await response.json();
+      if (hold.bookAgainAppointmentId && response.status >= 500) {
+        // Resolve ambiguous server errors by retrying the same hold once.
+        const retry = await fetch("/api/appointments/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(confirmBody),
+        });
+        const retryData = await retry.json();
+        if (retry.ok && retryData.success) {
+          response = retry;
+          data = retryData;
+        }
+      }
 
       // --------------------------------------------------
       // HANDLE CONFIRMATION FAILURE
@@ -925,6 +1005,9 @@ const handleSelectService = (service) => {
         }
 
         return;
+      }
+      if (hold.bookAgainAppointmentId && data.appointment_id === hold.bookAgainAppointmentId) {
+        throw new Error("Book Again did not create a separate appointment. No success was shown.");
       }
 
       // --------------------------------------------------
@@ -1018,6 +1101,18 @@ const handleSelectService = (service) => {
               The previous reservation could not be released. Retry the release before reserving another time. Unconfirmed holds expire automatically after five minutes.
             </p>
           )}
+          {isAdminMode && bookAgainAppointmentId && prefillCustomer && step < 5 && (
+            <div className="mx-auto mt-5 flex max-w-5xl flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-indigo-50/70 px-4 py-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">New appointment for</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-900">{prefillCustomer.name || "Customer"}</p>
+                <p className="text-xs text-slate-600">{[prefillCustomer.phone, prefillCustomer.email].filter(Boolean).join(" · ") || "Customer contact details unavailable"}</p>
+              </div>
+              {/*
+              <p className="text-xs text-slate-500">Original appointment #{bookAgainAppointmentId.slice(0, 8).toUpperCase()} stays unchanged</p>
+              */}
+            </div>
+          )}
 
           {/* ==================================================
               MAIN LAYOUT
@@ -1041,6 +1136,9 @@ const handleSelectService = (service) => {
 
               {step === 1 && (
                 <ServiceSelectionStep
+                  eyebrow={bookAgainAppointmentId ? "Book again" : undefined}
+                  title={bookAgainAppointmentId ? "Create a new appointment" : undefined}
+                  description={bookAgainAppointmentId ? "Choose the services and schedule for a separate appointment. The original booking will remain unchanged." : undefined}
                   categories={categories}
                   activeCategory={activeCategory}
                   onCategoryChange={setActiveCategory}
@@ -1163,6 +1261,11 @@ const handleSelectService = (service) => {
                           Your appointment may have been confirmed, but we could
                           not load its details.
                         </p>
+                        {isAdminMode && bookAgainAppointmentId && appointmentId && (
+                          <Link href={`/admin/appointments/${encodeURIComponent(appointmentId)}`} className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+                            Open new appointment
+                          </Link>
+                        )}
                       </div>
                     ) : (
                       /* --------------------------------------------------
@@ -1367,13 +1470,15 @@ const handleSelectService = (service) => {
 
                           {/* BOOK ANOTHER */}
 
-                          <Link
-                            href={isAdminMode ? "/admin/appointments/new" : "/book"}
-                            className="flex h-12 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f6c945] hover:text-slate-900"
-                          >
-                            Book another appointment
-                            <ArrowRight size={17} />
-                          </Link>
+                          {isAdminMode && bookAgainAppointmentId ? (
+                            <Link href={`/admin/appointments/${encodeURIComponent(appointmentId)}`} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f6c945] hover:text-slate-900">
+                              Open new appointment <ArrowRight size={17} />
+                            </Link>
+                          ) : (
+                            <Link href={isAdminMode ? "/admin/appointments/new" : "/book"} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f6c945] hover:text-slate-900">
+                              Book another appointment <ArrowRight size={17} />
+                            </Link>
+                          )}
                         </div>
 
                         {/* ==================================================
