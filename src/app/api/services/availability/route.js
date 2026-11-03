@@ -11,6 +11,9 @@ import {
   getBusinessDayOfWeek as getISTDayOfWeek,
   isValidBookingDate as isValidDate,
   getFreeIntervals,
+  getServiceIdsError,
+  isUuid,
+  getBookingDateError,
 } from "@/lib/booking/scheduling";
 
 export async function GET(request) {
@@ -24,7 +27,9 @@ export async function GET(request) {
     let businessId = searchParams.get("business_id");
     let bookingClient = supabase;
     const requestedTime = searchParams.get("time");
-    const rescheduleAppointmentId = searchParams.get("reschedule_appointment_id");
+    const rescheduleAppointmentId = searchParams.get(
+      "reschedule_appointment_id"
+    );
     if (isAdminMode) {
       adminContext = await authorizeBusinessAdmin(
         request,
@@ -42,18 +47,26 @@ export async function GET(request) {
     }
     if (rescheduleAppointmentId) {
       if (!isAdminMode) {
-        return respond({ error: "Appointment exclusion is available only to admins." }, { status: 403 });
+        return respond(
+          { error: "Appointment exclusion is available only to admins." },
+          { status: 403 }
+        );
       }
-      const { data: targetAppointment, error: targetError } = await bookingClient
-        .from("appointments")
-        .select("id, status")
-        .eq("id", rescheduleAppointmentId)
-        .eq("business_id", businessId)
-        .maybeSingle();
+      const { data: targetAppointment, error: targetError } =
+        await bookingClient
+          .from("appointments")
+          .select("id, status")
+          .eq("id", rescheduleAppointmentId)
+          .eq("business_id", businessId)
+          .maybeSingle();
       if (targetError) throw targetError;
-      if (!targetAppointment) return respond({ error: "Appointment not found." }, { status: 404 });
+      if (!targetAppointment)
+        return respond({ error: "Appointment not found." }, { status: 404 });
       if (targetAppointment.status !== "confirmed") {
-        return respond({ error: "Only confirmed appointments can be rescheduled." }, { status: 409 });
+        return respond(
+          { error: "Only confirmed appointments can be rescheduled." },
+          { status: 409 }
+        );
       }
     }
     const serviceIdsParam = searchParams.get("services");
@@ -76,31 +89,60 @@ export async function GET(request) {
         { status: 400 }
       );
     }
+    if (!isAdminMode) {
+      const dateError = getBookingDateError(date);
+      if (dateError) {
+        return respond({ error: dateError }, { status: 400 });
+      }
+    }
 
     const serviceIds = serviceIdsParam
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean);
 
-    if (serviceIds.length === 0) {
+    const serviceIdsError = getServiceIdsError(serviceIds);
+    if (serviceIdsError) {
+      return respond({ error: serviceIdsError }, { status: 400 });
+    }
+    if (!isUuid(businessId) || serviceIds.some((id) => !isUuid(id))) {
       return respond(
-        {
-          error: "service_ids must contain at least one service ID.",
-        },
+        { error: "Invalid business or service ID." },
         { status: 400 }
       );
     }
 
     const dayOfWeek = getISTDayOfWeek(date);
 
-    // 1. Load business opening hours.
-    const { data: businessHours, error: businessHoursError } =
-      await bookingClient
+    // Round 1: these three questions do not need each other's answers.
+    const [hoursResult, servicesResult, staffServicesResult] = await Promise.all([
+      bookingClient
         .from("business_hours")
         .select("is_open, open_time, close_time")
         .eq("business_id", businessId)
         .eq("day_of_week", dayOfWeek)
-        .maybeSingle();
+        .maybeSingle(),
+      bookingClient
+        .from("services")
+        .select("id, duration_minutes, buffer_minutes")
+        .eq("business_id", businessId)
+        .eq("is_active", true)
+        .eq("status", "completed")
+        .in("id", serviceIds),
+      bookingClient
+        .from("staff_services")
+        .select(
+          "staff_id, service_id, staff!staff_services_staff_business_fkey!inner(id, is_active, status, business_id)"
+        )
+        .eq("business_id", businessId)
+        .in("service_id", serviceIds)
+        .eq("staff.business_id", businessId)
+        .eq("staff.is_active", true)
+        .eq("staff.status", "completed"),
+    ]);
+    const { data: businessHours, error: businessHoursError } = hoursResult;
+    const { data: servicesData, error: servicesError } = servicesResult;
+    const { data: staffServicesData, error: staffServicesError } = staffServicesResult;
 
     if (businessHoursError) {
       console.error("Business-hours lookup failed:", businessHoursError);
@@ -147,14 +189,6 @@ export async function GET(request) {
       );
     }
 
-    // 2. Load requested services.
-    const { data: servicesData, error: servicesError } = await bookingClient
-      .from("services")
-      .select("id, duration_minutes, buffer_minutes")
-      .eq("business_id", businessId)
-      .eq("is_active", true)
-      .eq("status", "completed")
-      .in("id", serviceIds);
 
     if (servicesError) {
       console.error("Service lookup failed:", servicesError);
@@ -211,19 +245,6 @@ export async function GET(request) {
     const finalBufferMs =
       (orderedServices.at(-1)?.buffer_minutes || 0) * 60 * 1000;
 
-    // 3. Load qualified active staff.
-    const { data: staffServicesData, error: staffServicesError } =
-      await bookingClient
-        .from("staff_services")
-        .select(
-          "staff_id, service_id, staff!staff_services_staff_business_fkey!inner(id, is_active, status, business_id)"
-        )
-        .eq("business_id", businessId)
-        .in("service_id", serviceIds)
-
-        .eq("staff.business_id", businessId)
-        .eq("staff.is_active", true)
-        .eq("staff.status", "completed");
 
     if (staffServicesError) {
       console.error("Staff capability lookup failed:", staffServicesError);
@@ -236,7 +257,7 @@ export async function GET(request) {
       );
     }
 
-    const staffByServiceMap = new Map(); 
+    const staffByServiceMap = new Map();
     const eligibleStaffIdsSet = new Set();
 
     for (const row of staffServicesData || []) {
@@ -275,25 +296,6 @@ export async function GET(request) {
       );
     }
 
-    const { data: staffList, error: staffError } = await bookingClient
-      .from("staff")
-      .select("id, name")
-
-      .eq("business_id", businessId)
-      .eq("is_active", true)
-      .eq("status", "completed")
-      .in("id", eligibleStaffIds);
-
-    if (staffError) {
-      console.error("Staff lookup failed:", staffError);
-
-      return respond(
-        {
-          error: "Failed to fetch staff.",
-        },
-        { status: 500 }
-      );
-    }
 
     // 4. Define the full IST date window.
     const dayStartMs = getISTEpochMs(date, "00:00");
@@ -319,27 +321,56 @@ export async function GET(request) {
     );
 
     // 5. Add existing appointment blocks.
-    // Confirmed appointments consume staff capacity.
+    // Round 2: appointments, holds and (admin only) staff names run together.
+    const nowIso = new Date().toISOString();
+
     let appointmentQuery = bookingClient
-        .from("appointment_services")
-        .select(
-          ` 
-        staff_id, 
-        start_time, 
-        end_time, 
-        buffer_minutes, 
-        appointments!inner(id, status, business_id)
-      `
-        )
-        .in("staff_id", eligibleStaffIds)
-        .eq("appointments.business_id", businessId)
-        .in("appointments.status", ["confirmed", "arrived", "in_service"])
-        .lt("start_time", queryWindowEndIso)
-        .gt("end_time", queryWindowStartIso);
+      .from("appointment_services")
+      .select(`staff_id, start_time, end_time, buffer_minutes, appointments!inner(id, status, business_id)`)
+      .in("staff_id", eligibleStaffIds)
+      .eq("appointments.business_id", businessId)
+      .in("appointments.status", ["confirmed", "arrived", "in_service"])
+      .lt("start_time", queryWindowEndIso)
+      .gt("end_time", queryWindowStartIso);
     if (rescheduleAppointmentId) {
       appointmentQuery = appointmentQuery.neq("appointments.id", rescheduleAppointmentId);
     }
-    const { data: appointmentItems, error: appointmentItemsError } = await appointmentQuery;
+
+    const holdQuery = bookingClient
+      .from("booking_hold_services")
+      .select(`staff_id, start_time, end_time, buffer_minutes, booking_holds!inner(expires_at, status, business_id, reschedule_appointment_id)`)
+      .in("staff_id", eligibleStaffIds)
+      .eq("booking_holds.business_id", businessId)
+      .eq("booking_holds.status", "active")
+      .gt("booking_holds.expires_at", nowIso)
+      .lt("start_time", queryWindowEndIso)
+      .gt("end_time", queryWindowStartIso);
+
+    // Staff names are only needed by the admin screen.
+    const staffQuery = isAdminMode
+      ? bookingClient
+          .from("staff")
+          .select("id, name")
+          .eq("business_id", businessId)
+          .eq("is_active", true)
+          .eq("status", "completed")
+          .in("id", eligibleStaffIds)
+      : Promise.resolve({ data: [], error: null });
+
+    // Round 2: appointments, holds and (admin only) staff names together.
+    const [appointmentsResult, holdsResult, staffResult] = await Promise.all([
+      appointmentQuery,
+      holdQuery,
+      staffQuery,
+    ]);
+    const { data: appointmentItems, error: appointmentItemsError } = appointmentsResult;
+    const { data: holdItems, error: holdItemsError } = holdsResult;
+    const { data: staffList, error: staffError } = staffResult;
+
+    if (staffError) {
+      console.error("Staff lookup failed:", staffError);
+      return respond({ error: "Failed to fetch staff." }, { status: 500 });
+    }
 
     if (appointmentItemsError) {
       console.error(
@@ -372,25 +403,6 @@ export async function GET(request) {
     }
 
     // 6. Add active unexpired hold blocks.
-    const nowIso = new Date().toISOString();
-
-    const { data: holdItems, error: holdItemsError } = await bookingClient
-      .from("booking_hold_services")
-      .select(
-        ` 
-        staff_id, 
-        start_time, 
-        end_time, 
-        buffer_minutes, 
-        booking_holds!inner(expires_at, status, business_id, reschedule_appointment_id)
-      `
-      )
-      .in("staff_id", eligibleStaffIds)
-      .eq("booking_holds.business_id", businessId)
-      .eq("booking_holds.status", "active")
-      .gt("booking_holds.expires_at", nowIso)
-      .lt("start_time", queryWindowEndIso)
-      .gt("end_time", queryWindowStartIso);
 
     if (holdItemsError) {
       console.error("Hold conflict lookup failed:", holdItemsError);
@@ -404,7 +416,12 @@ export async function GET(request) {
     }
 
     for (const item of holdItems || []) {
-      if (rescheduleAppointmentId && item.booking_holds?.reschedule_appointment_id === rescheduleAppointmentId) continue;
+      if (
+        rescheduleAppointmentId &&
+        item.booking_holds?.reschedule_appointment_id ===
+          rescheduleAppointmentId
+      )
+        continue;
       const blockedList = blockedIntervalsByStaff.get(item.staff_id);
 
       if (!blockedList) {
@@ -426,8 +443,8 @@ export async function GET(request) {
 
     let latestCandidateEndMs = businessCloseMs;
 
-    for (const staff of staffList || []) {
-      const blockedList = blockedIntervalsByStaff.get(staff.id);
+    for (const staffId of eligibleStaffIds) {
+      const blockedList = blockedIntervalsByStaff.get(staffId);
 
       if (!blockedList) {
         continue;
@@ -463,13 +480,7 @@ export async function GET(request) {
     const slotStepMs = SLOT_INTERVAL_MINUTES * 60 * 1000;
 
     const availableSlots = [];
-    console.log("DEBUG businessOpenMs:", businessOpenMs);
-    console.log("DEBUG businessCloseMs:", businessCloseMs);
-    console.log("DEBUG earliestCandidateStartMs:", earliestCandidateStartMs);
-    console.log("DEBUG latestCandidateEndMs:", latestCandidateEndMs);
-    console.log("DEBUG minLeadTimeMs:", minLeadTimeMs);
-    console.log("DEBUG netServiceDurationMs:", netServiceDurationMs);
-    console.log("DEBUG finalBufferMs:", finalBufferMs);
+    // ADD ANY TYPE OF CONSOLE HERE
 
     for (
       let candidateStartMs = earliestCandidateStartMs;
@@ -526,27 +537,8 @@ export async function GET(request) {
           })),
       });
     }
-    console.log("DEBUG businessId:", businessId);
-    console.log("DEBUG serviceIds:", serviceIds);
-    console.log("DEBUG servicesData:", servicesData);
-    console.log("DEBUG staffServicesData:", staffServicesData);
-    console.log("DEBUG eligibleStaffIds:", eligibleStaffIds);
 
-    console.log(
-      "DEBUG staffByServiceMap:",
-      Object.fromEntries(staffByServiceMap)
-    );
-
-    console.log("DEBUG staffList:", staffList);
-    console.log("DEBUG appointmentItems:", appointmentItems);
-    console.log("DEBUG holdItems:", holdItems);
-
-    console.log(
-      "DEBUG blockedIntervalsByStaff:",
-      Object.fromEntries(blockedIntervalsByStaff)
-    );
-
-    console.log("DEBUG availableSlots:", availableSlots);
+    //ADD CONSOLE STATEMENTS HERE
 
     const selectedSlotAvailable =
       requestedTime &&

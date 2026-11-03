@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { BUSINESS_ID } from "@/lib/business";
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const ONLINE_BOOKING_CUTOFF_HOURS = 5;
@@ -91,6 +92,11 @@ export default function DateTimeStep({
     () => startOfDay(new Date()),
     []
   );
+  const lastBookableDate = useMemo(() => {
+    const date = new Date(today);
+    date.setDate(date.getDate() + 60);
+    return date;
+  }, [today]);
 
   const [visibleMonth, setVisibleMonth] = useState(
     () =>
@@ -161,6 +167,10 @@ export default function DateTimeStep({
       today.getFullYear() &&
     visibleMonth.getMonth() === today.getMonth();
 
+  const isLastBookableMonth =
+    visibleMonth.getFullYear() === lastBookableDate.getFullYear() &&
+    visibleMonth.getMonth() === lastBookableDate.getMonth();
+
   const goToPrevMonth = () => {
     if (isCurrentMonth) return;
 
@@ -175,6 +185,10 @@ export default function DateTimeStep({
   };
 
   const goToNextMonth = () => {
+    if (!adminMode && isLastBookableMonth) {
+      toast.error("Bookings can be made up to 60 days ahead only.");
+      return;
+    }
     setVisibleMonth(
       (current) =>
         new Date(
@@ -391,7 +405,7 @@ export default function DateTimeStep({
                 type="button"
                 onClick={goToNextMonth}
                 aria-label="Next month"
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 text-slate-600 transition hover:bg-slate-100"
+                className={`flex h-8 w-8 items-center justify-center rounded-full border border-black/10 text-slate-600 transition hover:bg-slate-100 ${!adminMode && isLastBookableMonth ? "cursor-not-allowed opacity-30" : ""}`}
               >
                 <ChevronRight size={16} />
               </button>
@@ -418,6 +432,7 @@ export default function DateTimeStep({
               }
 
               const isPast = date < today;
+              const isBeyondBookingWindow = !adminMode && date > lastBookableDate;
 
               const isToday = isSameDay(
                 date,
@@ -433,13 +448,16 @@ export default function DateTimeStep({
                   key={date.toISOString()}
                   type="button"
                   disabled={isPast}
+                  aria-disabled={isBeyondBookingWindow}
                   onClick={() =>
-                    onSelectDate(date)
+                    isBeyondBookingWindow
+                      ? toast.error("Bookings can be made up to 60 days ahead only.")
+                      : onSelectDate(date)
                   }
                   className={`mx-auto flex aspect-square w-full max-w-10 items-center justify-center rounded-full text-sm font-medium transition ${
                     isSelected
                       ? "bg-slate-900 text-white"
-                      : isPast
+                      : isPast || isBeyondBookingWindow
                       ? "cursor-not-allowed text-slate-300"
                       : "text-slate-700 hover:bg-[#f3efff] hover:text-[#6862b5]"
                   }`}

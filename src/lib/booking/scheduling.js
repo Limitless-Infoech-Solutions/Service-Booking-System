@@ -175,3 +175,35 @@ export function getServiceIdsError(ids) {
     return "Each service can only be selected once.";
   return null;
 }
+export const MAX_BOOKING_DAYS_AHEAD = 60;
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value) {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+export function getBusinessTodayString(nowMs = Date.now()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(nowMs));
+}
+
+export function getBookingDateError(
+  dateStr,
+  { maxDaysAhead = MAX_BOOKING_DAYS_AHEAD, nowMs = Date.now() } = {}
+) {
+  const today = getBusinessTodayString(nowMs);
+  if (dateStr < today) return "Please choose today or a later date.";
+  const [year, month, day] = today.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year, month - 1, day + maxDaysAhead))
+    .toISOString()
+    .slice(0, 10);
+  if (dateStr > lastDay)
+    return `Bookings can be made up to ${maxDaysAhead} days ahead only.`;
+  return null;
+}

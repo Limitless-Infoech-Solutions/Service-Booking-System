@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import AppointmentStatusManager from "@/components/admin/AppointmentStatusManager";
 import {
   Activity,
   AlertCircle,
@@ -114,12 +115,12 @@ function getDatePartInIndia(dateString) {
 
 function formatDashboardAppointment(appointment) {
   const serviceItems = appointment.appointment_services || [];
-  const serviceNames = [...new Set(
-    serviceItems.map((item) => item.services?.name).filter(Boolean)
-  )];
-  const staffNames = [...new Set(
-    serviceItems.map((item) => item.staff?.name).filter(Boolean)
-  )];
+  const serviceNames = [
+    ...new Set(serviceItems.map((item) => item.services?.name).filter(Boolean)),
+  ];
+  const staffNames = [
+    ...new Set(serviceItems.map((item) => item.staff?.name).filter(Boolean)),
+  ];
 
   return {
     ...appointment,
@@ -142,6 +143,25 @@ function getStatusClasses(status) {
   };
 
   return styles[status] || "bg-blue-50 text-blue-700";
+}
+
+function getStatusButtonClasses(status) {
+  const styles = {
+    confirmed: "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
+    arrived:
+      "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100",
+    in_service:
+      "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100",
+    completed:
+      "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100",
+    cancelled: "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100",
+    no_show: "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200",
+  };
+
+  return (
+    styles[status] ||
+    "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
+  );
 }
 
 // --------------------------------------------------
@@ -211,9 +231,7 @@ function MetricCard({
         </div>
 
         <span
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
-            iconColors[iconColor]
-          }`}
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${iconColors[iconColor]}`}
         >
           <Icon size={21} />
         </span>
@@ -236,7 +254,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function AppointmentTable({ appointments, loading = false }) {
+function AppointmentTable({ appointments, loading = false, onManageStatus }) {
   if (!appointments.length) {
     return (
       <div className="px-5 py-12 text-center">
@@ -244,9 +262,11 @@ function AppointmentTable({ appointments, loading = false }) {
         <p className="mt-3 text-sm font-semibold text-slate-700">
           {loading ? "Loading appointments…" : "No appointments for this date"}
         </p>
-        {!loading && <p className="mt-1 text-xs text-slate-400">
-          Select another date or create a new appointment.
-        </p>}
+        {!loading && (
+          <p className="mt-1 text-xs text-slate-400">
+            Select another date or create a new appointment.
+          </p>
+        )}
       </div>
     );
   }
@@ -267,10 +287,7 @@ function AppointmentTable({ appointments, loading = false }) {
 
         <tbody className="divide-y divide-slate-100">
           {appointments.map((appointment) => (
-            <tr
-              key={appointment.id}
-              className="transition hover:bg-blue-50/30"
-            >
+            <tr key={appointment.id} className="transition hover:bg-blue-50/30">
               <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-slate-700">
                 {appointment.time || formatTime(appointment.start_time)}
               </td>
@@ -297,7 +314,30 @@ function AppointmentTable({ appointments, loading = false }) {
               </td>
 
               <td className="px-4 py-3">
-                <StatusBadge status={appointment.status} />
+                {onManageStatus ? (
+                  <button
+                    type="button"
+                    onClick={() => onManageStatus(appointment)}
+                    aria-label={`Manage status for ${
+                      appointment.customer ||
+                      appointment.customers?.name ||
+                      "appointment"
+                    }: ${String(appointment.status || "scheduled").replaceAll(
+                      "_",
+                      " "
+                    )}`}
+                    className={`inline-flex h-10 min-w-30 items-center justify-center whitespace-nowrap rounded-lg border px-4 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${getStatusButtonClasses(
+                      appointment.status
+                    )}`}
+                  >
+                    {String(appointment.status || "scheduled").replaceAll(
+                      "_",
+                      " "
+                    )}
+                  </button>
+                ) : (
+                  <StatusBadge status={appointment.status} />
+                )}
               </td>
 
               <td className="px-4 py-3">
@@ -333,6 +373,10 @@ export default function AdminDashboard() {
   const [calendarMonth, setCalendarMonth] = useState("");
   const [viewingWeek, setViewingWeek] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [selectedStatusAppointment, setSelectedStatusAppointment] =
+    useState(null);
+  const [schedulePage, setSchedulePage] = useState(1);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
 
   useEffect(() => {
     const currentDate = getTodayInIndia();
@@ -342,16 +386,25 @@ export default function AdminDashboard() {
     setCalendarMonth(currentDate.slice(0, 7));
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSchedulePage(1);
+  }, [selectedDate, viewingWeek]);
+
   // Fetch real metrics from the dashboard API.
   const loadDashboard = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
 
-      const response = await fetch(
-        "/api/admin/dashboard",
-        { cache: "no-store" }
-      );
+      const response = await fetch("/api/admin/dashboard", {
+        cache: "no-store",
+      });
 
       const data = await response.json();
 
@@ -380,11 +433,14 @@ export default function AdminDashboard() {
       setCalendarLoading(true);
       setCalendarError("");
       const response = await fetch(
-        `/api/admin/dashboard/calender?month=${encodeURIComponent(calendarMonth)}`,
+        `/api/admin/dashboard/calender?month=${encodeURIComponent(
+          calendarMonth
+        )}`,
         { cache: "no-store" }
       );
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to load calendar.");
+      if (!response.ok)
+        throw new Error(data.error || "Failed to load calendar.");
       setCalendarAppointments(data.data?.appointments || []);
     } catch (err) {
       console.error("Dashboard calendar loading error:", err);
@@ -406,7 +462,11 @@ export default function AdminDashboard() {
       loadCalendar();
     };
     window.addEventListener("appointment-status-updated", refreshAppointments);
-    return () => window.removeEventListener("appointment-status-updated", refreshAppointments);
+    return () =>
+      window.removeEventListener(
+        "appointment-status-updated",
+        refreshAppointments
+      );
   }, [loadDashboard, loadCalendar]);
 
   const metrics = dashboardData?.metrics || {};
@@ -414,12 +474,47 @@ export default function AdminDashboard() {
   const safeToday = today || getTodayInIndia();
   const realAppointments = dashboardData?.data?.appointments || [];
   const selectedAppointments = calendarAppointments
-    .filter((appointment) => getDatePartInIndia(appointment.start_time) === selectedDate)
+    .filter(
+      (appointment) =>
+        getDatePartInIndia(appointment.start_time) === selectedDate
+    )
     .map(formatDashboardAppointment);
-  const upcomingAppointments = (dashboardData?.data?.upcomingAppointments || [])
-    .map(formatDashboardAppointment);
-  const recentAppointments = (dashboardData?.data?.recentAppointments || [])
-    .map(formatDashboardAppointment);
+  const todayAppointments = realAppointments;
+  const overdueConfirmedCount = todayAppointments.filter(
+    (appointment) =>
+      appointment.status === "confirmed" &&
+      Number.isFinite(new Date(appointment.start_time).getTime()) &&
+      new Date(appointment.start_time).getTime() < currentTime
+  ).length;
+  const scheduleAppointments = viewingWeek
+    ? calendarAppointments
+        .filter((appointment) => {
+          const appointmentDate = getDatePartInIndia(appointment.start_time);
+          const startDate = selectedDate || safeToday;
+          const dayOffset =
+            (new Date(`${appointmentDate}T12:00:00Z`) -
+              new Date(`${startDate}T12:00:00Z`)) /
+            86400000;
+          return dayOffset >= 0 && dayOffset < 7;
+        })
+        .map(formatDashboardAppointment)
+    : selectedAppointments;
+  const schedulePageSize = 5;
+  const scheduleTotalPages = Math.max(
+    1,
+    Math.ceil(scheduleAppointments.length / schedulePageSize)
+  );
+  const visibleSchedulePage = Math.min(schedulePage, scheduleTotalPages);
+  const paginatedScheduleAppointments = scheduleAppointments.slice(
+    (visibleSchedulePage - 1) * schedulePageSize,
+    visibleSchedulePage * schedulePageSize
+  );
+  const upcomingAppointments = (
+    dashboardData?.data?.upcomingAppointments || []
+  ).map(formatDashboardAppointment);
+  const recentAppointments = (
+    dashboardData?.data?.recentAppointments || []
+  ).map(formatDashboardAppointment);
 
   const activeStaffCount = Number(metrics.activeStaff ?? 0);
   const availableStaffCount = Number(
@@ -438,7 +533,9 @@ export default function AdminDashboard() {
         return total;
       }
 
-      return total + Number(appointment.total_amount ?? appointment.amount ?? 0);
+      return (
+        total + Number(appointment.total_amount ?? appointment.amount ?? 0)
+      );
     },
     0
   );
@@ -476,7 +573,9 @@ export default function AdminDashboard() {
   ];
 
   const datesWithAppointments = new Set(
-    calendarAppointments.map((appointment) => getDatePartInIndia(appointment.start_time))
+    calendarAppointments.map((appointment) =>
+      getDatePartInIndia(appointment.start_time)
+    )
   );
 
   const quickActions = [
@@ -748,12 +847,12 @@ export default function AdminDashboard() {
                 value={metrics.newCustomersToday ?? 0}
                 icon={Users}
                 iconColor="green"
-               // subtitle="Registered today"
+                // subtitle="Registered today"
                 loading={loading}
-                // eslint-disable-next-line react/jsx-no-duplicate-props
-                subtitle={`Total: ${loading ? "—" : (metrics.totalCustomers ?? 0)}`}
-                />
-              
+                subtitle={`Total: ${
+                  loading ? "—" : metrics.totalCustomers ?? 0
+                }`}
+              />
 
               <MetricCard
                 title="Today's Appointments"
@@ -858,8 +957,8 @@ export default function AdminDashboard() {
                         isSelected
                           ? "bg-blue-600 font-bold text-white shadow-md"
                           : isToday
-                            ? "border border-blue-300 font-bold text-blue-600"
-                            : "text-slate-600 hover:bg-blue-50"
+                          ? "border border-blue-300 font-bold text-blue-600"
+                          : "text-slate-600 hover:bg-blue-50"
                       }`}
                     >
                       {day}
@@ -921,6 +1020,14 @@ export default function AdminDashboard() {
               <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
                 <div>
                   <h2 className="font-bold">Daily Schedule</h2>
+                  {selectedDate === safeToday && overdueConfirmedCount > 0 && (
+                    <p
+                      className="mt-1 animate-pulse text-xs font-semibold text-rose-600"
+                      role="status"
+                    >
+                      ⚠ These appointments need your attention!
+                    </p>
+                  )}
                   <p className="mt-1 text-xs text-slate-500">
                     {formatDate(selectedDate, {
                       weekday: "short",
@@ -969,7 +1076,11 @@ export default function AdminDashboard() {
                     <ChevronLeft size={17} />
                   </button>
                   <span className="text-xs font-semibold text-blue-700">
-                    Week of {formatDate(selectedDate, { day: "numeric", month: "short" })}
+                    Week of{" "}
+                    {formatDate(selectedDate, {
+                      day: "numeric",
+                      month: "short",
+                    })}
                   </span>
                   <button
                     type="button"
@@ -983,24 +1094,47 @@ export default function AdminDashboard() {
               )}
 
               {calendarError && (
-                <p role="alert" className="border-y border-rose-100 bg-rose-50 px-5 py-3 text-sm text-rose-700">
+                <p
+                  role="alert"
+                  className="border-y border-rose-100 bg-rose-50 px-5 py-3 text-sm text-rose-700"
+                >
                   {calendarError}
                 </p>
               )}
 
               <AppointmentTable
-                appointments={viewingWeek
-                  ? calendarAppointments
-                      .filter((appointment) => {
-                        const appointmentDate = getDatePartInIndia(appointment.start_time);
-                        const startDate = selectedDate || safeToday;
-                        const dayOffset = (new Date(`${appointmentDate}T12:00:00Z`) - new Date(`${startDate}T12:00:00Z`)) / 86400000;
-                        return dayOffset >= 0 && dayOffset < 7;
-                      })
-                      .map(formatDashboardAppointment)
-                  : selectedAppointments}
+                appointments={paginatedScheduleAppointments}
                 loading={calendarLoading}
+                onManageStatus={setSelectedStatusAppointment}
               />
+
+              <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSchedulePage((page) => Math.max(1, page - 1))
+                  }
+                  disabled={visibleSchedulePage <= 1}
+                  className="rounded-lg px-3 py-2 font-semibold text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {visibleSchedulePage} of {scheduleTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSchedulePage((page) =>
+                      Math.min(scheduleTotalPages, page + 1)
+                    )
+                  }
+                  disabled={visibleSchedulePage >= scheduleTotalPages}
+                  className="rounded-lg px-3 py-2 font-semibold text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                >
+                  Next
+                </button>
+              </div>
 
               <div className="border-t border-slate-100 px-5 py-3">
                 <Link
@@ -1050,7 +1184,8 @@ export default function AdminDashboard() {
               </div>
 
               <p className="mt-5 text-xs leading-5 text-slate-400">
-                Scheduled value is based on appointments in the selected date and does not represent money collected.
+                Scheduled value is based on appointments in the selected date
+                and does not represent money collected.
               </p>
             </Card>
 
@@ -1178,11 +1313,11 @@ export default function AdminDashboard() {
                         {appointment.date === safeToday
                           ? "Today"
                           : appointment.date === addDays(safeToday, 1)
-                            ? "Tomorrow"
-                            : formatDate(appointment.date, {
-                                day: "numeric",
-                                month: "short",
-                              })}
+                          ? "Tomorrow"
+                          : formatDate(appointment.date, {
+                              day: "numeric",
+                              month: "short",
+                            })}
                         , {appointment.time}
                       </td>
 
@@ -1214,7 +1349,9 @@ export default function AdminDashboard() {
             </div>
 
             {upcomingAppointments.length === 0 && !loading && (
-              <p className="px-5 pb-5 text-sm text-slate-500">No upcoming appointments.</p>
+              <p className="px-5 pb-5 text-sm text-slate-500">
+                No upcoming appointments.
+              </p>
             )}
           </Card>
 
@@ -1325,8 +1462,7 @@ export default function AdminDashboard() {
                 <div>
                   <p className="text-xs text-slate-400">Services</p>
                   <p className="text-sm font-semibold">
-                    {selectedAppointment.services ||
-                      "Service booking"}
+                    {selectedAppointment.services || "Service booking"}
                   </p>
                 </div>
               </div>
@@ -1370,16 +1506,43 @@ export default function AdminDashboard() {
               </button>
 
               {selectedAppointment.id && (
-                  <Link
-                    href={`/admin/appointments/${selectedAppointment.id}`}
-                    className="flex-1 rounded-xl bg-blue-700 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-blue-800"
-                  >
-                    Open Appointment
-                  </Link>
-                )}
+                <Link
+                  href={`/admin/appointments/${selectedAppointment.id}`}
+                  className="flex-1 rounded-xl bg-blue-700 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-blue-800"
+                >
+                  Open Appointment
+                </Link>
+              )}
             </div>
           </div>
         </div>
+      )}
+      {selectedStatusAppointment && (
+        <AppointmentStatusManager
+          key={selectedStatusAppointment.id}
+          appointment={selectedStatusAppointment}
+          presentation="modal"
+          onUpdated={async () => {
+            try {
+              const response = await fetch(
+                `/api/admin/appointments/${encodeURIComponent(
+                  selectedStatusAppointment.id
+                )}`,
+                { cache: "no-store" }
+              );
+              const result = await response.json();
+              if (response.ok && result.appointment) {
+                setSelectedStatusAppointment(result.appointment);
+              }
+            } catch (refreshError) {
+              console.error(
+                "Failed to refresh appointment after status transition:",
+                refreshError
+              );
+            }
+          }}
+          onClose={() => setSelectedStatusAppointment(null)}
+        />
       )}
     </div>
   );
