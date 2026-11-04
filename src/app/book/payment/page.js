@@ -55,16 +55,7 @@ agreedToTerms
 const handlePayment = () => {
 if (!canContinue) return;
 
-console.log("Submitting payment", {
-  contact,
-  paymentMethod,
-  cardDetails:
-    paymentMethod === "card" ? cardDetails : undefined,
-  upiId: paymentMethod === "upi" ? upiId : undefined,
-  total,
 
-  
-});
 router.push("/book/sucess");
 
 const params = new URLSearchParams(searchParams.toString());

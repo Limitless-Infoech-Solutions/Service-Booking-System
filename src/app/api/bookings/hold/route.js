@@ -258,7 +258,7 @@ export async function DELETE(request) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    console.log("BOOKING HOLD BODY:", body);
+    //ADD CONSOLE HERE 
 
     const {
       business_id: requestedBusinessId,
@@ -1097,8 +1097,7 @@ export async function POST(request) {
           p_items: holdItemsPayload,
         };
     const { data: rpcData, error: rpcError } = await bookingClient.rpc(rpcName, rpcArgs);
-    console.log("RPC DATA:", rpcData);
-    console.log("RPC ERROR:", rpcError);
+   
     if (rpcError) {
       console.error("Atomic booking hold failed:", rpcError);
 
