@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Check, CalendarDays, ArrowRight } from "lucide-react";
+import { ArrowLeft, Check, CalendarDays, ArrowRight,User } from "lucide-react";
 import {
   useCallback,
   useMemo,
@@ -1268,24 +1268,25 @@ export default function AppointmentPage() {
 
           <header>
             <div className="flex items-center gap-3">
-              {step === 1 ? (
-                <Link
-                  href={isAdminMode ? "/admin" : "/book"}
-                  aria-label="Go back"
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-slate-800 transition-all duration-300 hover:bg-slate-900 hover:text-white"
-                >
-                  <ArrowLeft size={19} strokeWidth={1.7} />
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleBack}
-                  aria-label="Go back"
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-slate-800 transition-all duration-300 hover:bg-slate-900 hover:text-white"
-                >
-                  <ArrowLeft size={19} strokeWidth={1.7} />
-                </button>
-              )}
+              {step < 5 &&
+                (step === 1 ? (
+                  <Link
+                    href={isAdminMode ? "/admin" : "/book"}
+                    aria-label="Go back"
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-slate-800 transition-all duration-300 hover:bg-slate-900 hover:text-white"
+                  >
+                    <ArrowLeft size={19} strokeWidth={1.7} />
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    aria-label="Go back"
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-slate-800 transition-all duration-300 hover:bg-slate-900 hover:text-white"
+                  >
+                    <ArrowLeft size={19} strokeWidth={1.7} />
+                  </button>
+                ))}
 
               <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
                 {isAdminMode ? "Admin · New Appointment" : "Book Appointment"}
@@ -1754,8 +1755,8 @@ export default function AppointmentPage() {
                             type="button"
                             className="flex h-12 items-center justify-center gap-2 rounded-xl border border-black/10 bg-white px-6 text-sm font-semibold text-slate-900 transition-all duration-200 hover:bg-slate-50"
                           >
-                            <CalendarDays size={18} />
-                            Add to calendar
+                            <User size={18} />
+                           Go To Profile
                           </button>
 
                           {/* BOOK ANOTHER */}

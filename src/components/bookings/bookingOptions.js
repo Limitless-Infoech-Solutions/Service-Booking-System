@@ -13,6 +13,6 @@ export const bookingOptions = [
       description: "Schedule a service for yourself and others.",
       icon: "users",
       image: "/images/booking-group.jpg",
-      href: "/book/group",
+      href: "/book/Group-Appointment",
     },
   ];

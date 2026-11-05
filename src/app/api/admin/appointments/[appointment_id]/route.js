@@ -9,6 +9,7 @@ const APPOINTMENT_STATUSES = new Set([
   "no_show",
 ]);
 const SERVICE_START_GRACE_MS = 2 * 60 * 1000;
+const ARRIVAL_ACTIVATION_WINDOW_MS = 30 * 60 * 1000;
 
 function getBusinessTimestamp(value) {
   if (!value || typeof value !== "string") return NaN;
@@ -223,6 +224,13 @@ export async function PATCH(request, { params }) {
   const now = Date.now();
   if (!Number.isFinite(startMs)) {
     return adminJson(context, { error: "The scheduled appointment start time is unavailable." }, { status: 400 });
+  }
+  if (expectedStatus === "confirmed" && newStatus === "arrived" && now < startMs - ARRIVAL_ACTIVATION_WINDOW_MS) {
+    return adminJson(context, {
+      code: "ARRIVAL_TOO_EARLY",
+      error: "Appointment status cannot be activated yet. You can activate it 30 minutes before the scheduled appointment time.",
+      available_at: new Date(startMs - ARRIVAL_ACTIVATION_WINDOW_MS).toISOString(),
+    }, { status: 400 });
   }
   if (["in_service", "completed"].includes(newStatus) && now < startMs + SERVICE_START_GRACE_MS) {
     return adminJson(context, {

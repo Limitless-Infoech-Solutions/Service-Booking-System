@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { LockKeyhole } from "lucide-react";
+import toast from "react-hot-toast";
 import AppointmentStatusHistory from "@/components/admin/AppointmentStatusHistory";
 
 const FLOW = [
@@ -20,6 +21,9 @@ const LABELS = {
   no_show: "No-show",
 };
 const SERVICE_START_GRACE_MS = 2 * 60 * 1000;
+const ARRIVAL_ACTIVATION_WINDOW_MS = 30 * 60 * 1000;
+const ARRIVAL_TOO_EARLY_MESSAGE =
+  "Appointment status cannot be activated yet. You can activate it 30 minutes before the scheduled appointment time.";
 
 function getBusinessTimestamp(value) {
   if (!value) return NaN;
@@ -114,6 +118,7 @@ export default function AppointmentStatusManager({
 
   const startMs = getBusinessTimestamp(appointment.start_time);
   const startTimeValid = Number.isFinite(startMs);
+  const arrivalEligible = startTimeValid && now >= startMs - ARRIVAL_ACTIVATION_WINDOW_MS;
   const noShowEligible = startTimeValid && now > startMs;
   const serviceEligible = startTimeValid && now >= startMs + SERVICE_START_GRACE_MS;
   const serviceAvailableAt = startTimeValid
@@ -128,6 +133,10 @@ export default function AppointmentStatusManager({
 
   async function transitionTo(newStatus) {
     if (submitting.current || !appointment.id) return;
+    if (status === "confirmed" && newStatus === "arrived" && Date.now() < startMs - ARRIVAL_ACTIVATION_WINDOW_MS) {
+      toast.error(ARRIVAL_TOO_EARLY_MESSAGE);
+      return;
+    }
     if (["in_service", "completed"].includes(newStatus) && !serviceEligible) {
       setError(
         startTimeValid
@@ -158,6 +167,11 @@ export default function AppointmentStatusManager({
         }
       );
       const result = await response.json().catch(() => ({}));
+
+      if (result.code === "ARRIVAL_TOO_EARLY") {
+        toast.error(result.error || ARRIVAL_TOO_EARLY_MESSAGE);
+        return;
+      }
 
       if (response.status === 409) {
         await onUpdated?.();
@@ -297,7 +311,13 @@ export default function AppointmentStatusManager({
                       type="button"
                       disabled={busy || (["in_service", "completed"].includes(flowStatus) && !serviceEligible)}
                       aria-pressed={pendingStatus === flowStatus}
-                      onClick={() => setPendingStatus(flowStatus)}
+                      onClick={() => {
+                        if (status === "confirmed" && flowStatus === "arrived" && Date.now() < startMs - ARRIVAL_ACTIVATION_WINDOW_MS) {
+                          toast.error(ARRIVAL_TOO_EARLY_MESSAGE);
+                          return;
+                        }
+                        setPendingStatus(flowStatus);
+                      }}
                       className={`flex min-h-12 w-full items-center justify-between gap-3 rounded-lg px-4 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 ${
                         pendingStatus === flowStatus
                           ? "bg-blue-100 font-semibold text-blue-900"
@@ -311,7 +331,7 @@ export default function AppointmentStatusManager({
                         <span>{label}</span>
                       </span>
                       <span className="text-xs font-semibold uppercase tracking-wide text-blue-700">
-                        {pendingStatus === flowStatus ? "Selected" : (["in_service", "completed"].includes(flowStatus) && !serviceEligible) ? "Unavailable" : "Next"}
+                        {pendingStatus === flowStatus ? "Selected" : (["in_service", "completed"].includes(flowStatus) && !serviceEligible) || (status === "confirmed" && flowStatus === "arrived" && !arrivalEligible) ? "Unavailable" : "Next"}
                       </span>
                     </button>
                   ) : (
@@ -341,13 +361,7 @@ export default function AppointmentStatusManager({
               progression is available.
             </p>
           )}
-          {isModal && !terminal && (status === "confirmed" || status === "arrived") && !serviceEligible && (
-            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
-              {startTimeValid
-                ? `Arrived remains available. In Service and Completed are unavailable until the scheduled start time plus the two-minute grace period (${serviceAvailableAt}).`
-                : "In Service and Completed are unavailable because the scheduled start time could not be loaded."}
-            </p>
-          )}
+         
           {isModal && (
             <section
               className="mt-5 rounded-xl border border-blue-100 bg-blue-50/60 p-4"
