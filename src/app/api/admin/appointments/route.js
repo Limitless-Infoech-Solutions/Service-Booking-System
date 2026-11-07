@@ -18,6 +18,7 @@ export async function GET(request) {
       );
     }
     const businessId = context.businessId;
+    const customerId = searchParams.get("customer_id");
     let date = searchParams.get("date");
     const status = searchParams.get("status") || "";
     const search = (searchParams.get("search") || "")
@@ -37,6 +38,13 @@ export async function GET(request) {
         { error: "Invalid appointment status." },
         { status: 400 }
       );
+    }
+
+    if (
+      customerId !== null &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId)
+    ) {
+      return adminJson(context, { error: "Invalid customer ID." }, { status: 400 });
     }
 
     // Business ID is required.
@@ -88,48 +96,84 @@ export async function GET(request) {
 
     const startOfNextDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
 
-    let query = context.supabase
-      .from("appointments")
-      .select(
-        `
+    const appointmentSelection = `
         id,
         customer_id,
         start_time,
         end_time,
         status,
+        booking_source,
         total_amount,
         appointment_services (
           staff_id,
-          staff (id, name)
+          staff (id, name)${customerId !== null ? ",\n          services (id, name)" : ""}
         ),
         customers!appointments_customer_id_fkey (
           id,
           name,
           phone
         )
-      `
-      )
-      .eq("business_id", businessId)
-      .gte("start_time", startOfDay.toISOString())
-      .lt("start_time", startOfNextDay.toISOString())
-      .order("start_time", { ascending: true });
+      `;
+    let appointmentRows = [];
 
-    if (status) query = query.eq("status", status);
+    if (customerId !== null) {
+      const { data: customer, error: customerError } = await context.supabase
+        .from("customers")
+        .select("id")
+        .eq("id", customerId)
+        .eq("business_id", businessId)
+        .maybeSingle();
 
-    const { data: appointmentRows, error } = await query;
+      if (customerError) {
+        console.error("Customer appointment access check failed:", customerError);
+        return adminJson(context, { error: "Failed to verify customer." }, { status: 500 });
+      }
+      if (!customer) {
+        return adminJson(context, { error: "Customer not found." }, { status: 404 });
+      }
 
-    if (error) {
-      console.error("Appointments API error:", error);
+      // Load the full history in bounded batches so Supabase's per-request row
+      // limit cannot silently truncate statistics or customer filters.
+      const pageSize = 500;
+      for (let offset = 0; ; offset += pageSize) {
+        const { data: batch, error } = await context.supabase
+          .from("appointments")
+          .select(appointmentSelection)
+          .eq("business_id", businessId)
+          .eq("customer_id", customerId)
+          .order("start_time", { ascending: false })
+          .order("id", { ascending: true })
+          .range(offset, offset + pageSize - 1);
 
-      return adminJson(
-        context,
-        { error: "Failed to load appointments." },
-        { status: 500 }
-      );
+        if (error) {
+          console.error("Customer appointments API error:", error);
+          return adminJson(context, { error: "Failed to load appointments." }, { status: 500 });
+        }
+
+        appointmentRows.push(...(batch || []));
+        if (!batch || batch.length < pageSize) break;
+      }
+    } else {
+      let query = context.supabase
+        .from("appointments")
+        .select(appointmentSelection)
+        .eq("business_id", businessId)
+        .gte("start_time", startOfDay.toISOString())
+        .lt("start_time", startOfNextDay.toISOString())
+        .order("start_time", { ascending: true });
+
+      if (status) query = query.eq("status", status);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error("Appointments API error:", error);
+        return adminJson(context, { error: "Failed to load appointments." }, { status: 500 });
+      }
+      appointmentRows = data || [];
     }
 
-    const data = (appointmentRows || []).filter((appointment) => {
-      if (!search) return true;
+    const data = appointmentRows.filter((appointment) => {
+      if (customerId !== null || !search) return true;
       const name = appointment.customers?.name || "";
       const phone = appointment.customers?.phone || "";
       return `${name} ${phone}`.toLocaleLowerCase("en-IN").includes(search);
@@ -138,29 +182,32 @@ export async function GET(request) {
     const appointmentIds = data.map((appointment) => appointment.id);
     let historyEventsAvailable = true;
     const eventTypesByAppointment = new Map();
-    if (appointmentIds.length) {
-      const { data: events, error: eventsError } = await context.supabase.rpc(
-        "get_admin_appointment_event_types",
-        {
-          p_business_id: businessId,
-          p_appointment_ids: appointmentIds,
-        }
-      );
+    for (let offset = 0; offset < appointmentIds.length; offset += 200) {
+      const ids = appointmentIds.slice(offset, offset + 200);
+      const { data: events, error: eventsError } = await context.supabase
+        .from("appointment_events")
+        .select("appointment_id, event_type")
+        .eq("business_id", businessId)
+        .in("appointment_id", ids)
+        .in("event_type", ["rescheduled", "booked_again"]);
 
       if (eventsError) {
-        // Keep the table usable if the scoped event-read grant/policy has not
-        // been configured. Expose the state so missing events are not implied.
+        // Direct scoped reads return every relevant event, unlike the existing
+        // RPC, which keeps only the latest event per appointment.
         console.error("Appointment event lookup failed:", {
           code: eventsError.code || null,
           message: eventsError.message || null,
         });
         historyEventsAvailable = false;
-      } else {
-        for (const event of events || []) {
-          const types = eventTypesByAppointment.get(event.appointment_id) || new Set();
-          types.add(event.event_type);
-          eventTypesByAppointment.set(event.appointment_id, types);
-        }
+        break;
+      }
+
+      for (const event of events || []) {
+        // event.appointment_id is the appointment carrying this event. In
+        // particular, never associate Book Again using source_appointment_id.
+        const types = eventTypesByAppointment.get(event.appointment_id) || new Set();
+        types.add(event.event_type);
+        eventTypesByAppointment.set(event.appointment_id, types);
       }
     }
 
@@ -176,6 +223,7 @@ export async function GET(request) {
       appointments: appointmentsWithHistory,
       total: data.length,
       historyEventsAvailable,
+      ...(customerId !== null ? { fullHistory: true } : {}),
     });
   } catch (error) {
     console.error("Unexpected appointments API error:", error);

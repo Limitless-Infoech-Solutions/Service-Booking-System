@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Users,
   Search,
@@ -225,14 +226,15 @@ export default function CustomersPage() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3">
               {filteredCustomers.map((customer) => (
-                <article
+                <Link
                   key={customer.id}
-                  className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:border-blue-200 hover:shadow-lg"
+                  href={`/admin/customers/${encodeURIComponent(customer.id)}`}
+                  className="group grid cursor-pointer grid-cols-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e9be0] focus-visible:ring-offset-2 sm:grid-cols-[minmax(180px,0.8fr)_minmax(0,2fr)]"
                 >
                   {/* Card Header */}
-                  <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+                  <div className="flex items-center justify-between border-b border-gray-100 px-5 py-2.5 sm:col-span-2">
                     <p className="text-xs font-medium uppercase tracking-wider text-gray-400">
                       Customer Profile
                     </p>
@@ -243,25 +245,26 @@ export default function CustomersPage() {
                   </div>
 
                   {/* Profile Icon */}
-                  <div className="px-5 pb-6 pt-7 text-center">
-                    <h3
-                      className="truncate text-lg font-bold text-[#0b0e14]"
-                      title={customer.name}
-                    >
-                      {customer.name}
-                    </h3>
-
-                    <div className="mx-auto mt-6 flex h-24 w-24 items-center justify-center rounded-full border-4 border-blue-50 bg-gradient-to-br from-blue-50 to-sky-100 text-[#1e9be0] transition duration-200 group-hover:scale-105">
+                  <div className="flex items-center gap-4 px-5 py-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-4 border-blue-50 bg-gradient-to-br from-blue-50 to-sky-100 text-[#1e9be0] transition duration-200 group-hover:scale-105 sm:h-14 sm:w-14">
                       <UserRound size={43} strokeWidth={1.6} />
                     </div>
 
-                    <p className="mt-3 text-xs text-gray-400">
-                      Customer ID: {customer.id.slice(0, 8)}
-                    </p>
+                    <div className="min-w-0">
+                      <h3
+                        className="truncate text-lg font-bold text-[#0b0e14]"
+                        title={customer.name}
+                      >
+                        {customer.name}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-gray-400">
+                        Customer ID: {customer.id.slice(0, 8)}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Contact Details */}
-                  <div className="space-y-3 border-t border-gray-100 bg-gray-50/70 p-5">
+                  <div className="grid gap-3 border-t border-gray-100 bg-gray-50/70 px-5 py-3 sm:grid-cols-2 sm:content-center">
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-[#1e9be0] shadow-sm">
                         <Phone size={17} />
@@ -298,7 +301,7 @@ export default function CustomersPage() {
                   </div>
 
                   {/* Registration Date */}
-                  <div className="border-t border-gray-100 px-5 py-3">
+                  <div className="border-t border-gray-100 px-5 py-2 sm:col-span-2">
                     <p className="text-xs text-gray-400">
                       Registered on{" "}
                       <span className="font-medium text-gray-600">
@@ -314,7 +317,7 @@ export default function CustomersPage() {
                       </span>
                     </p>
                   </div>
-                </article>
+                </Link>
               ))}
             </div>
           </>

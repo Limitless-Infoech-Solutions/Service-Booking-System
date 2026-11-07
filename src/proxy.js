@@ -11,7 +11,7 @@ function withAuthCookies(response, context) {
 export async function proxy(request) {
   const { pathname, searchParams } = request.nextUrl;
   const adminPage = pathname === "/admin" || pathname.startsWith("/admin/");
-  const adminBooking = pathname === "/book/appointment" && searchParams.get("mode") === "admin";
+  const adminBooking = pathname === "/book/appointment" && ["admin", "walk-in"].includes(searchParams.get("mode"));
 
   if ((!adminPage || pathname === "/admin/login") && !adminBooking) {
     return NextResponse.next();

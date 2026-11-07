@@ -65,7 +65,7 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const holdId = searchParams.get("hold_id");
-    const isAdminMode = searchParams.get("mode") === "admin";
+    const isAdminMode = ["admin", "walk-in"].includes(searchParams.get("mode"));
     const flowHoldId = request.cookies.get("booking_flow_hold")?.value;
 
     if (

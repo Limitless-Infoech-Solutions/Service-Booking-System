@@ -37,6 +37,13 @@ export async function POST(request) {
     const rescheduleAppointmentId = body.reschedule_appointment_id || null;
     const bookAgainAppointmentId = body.book_again_appointment_id || null;
     const isAdminMode = body.admin_mode === true;
+    const isWalkInMode = body.booking_mode === "walk-in";
+    if (body.booking_mode !== undefined && !isWalkInMode) {
+      return NextResponse.json({ error: "Invalid booking mode." }, { status: 400 });
+    }
+    if (isWalkInMode && !isAdminMode) {
+      return NextResponse.json({ error: "Admin authorization is required." }, { status: 403 });
+    }
     if ((rescheduleAppointmentId || bookAgainAppointmentId) && !isAdminMode) {
       return NextResponse.json({ error: "Admin authorization is required." }, { status: 403 });
     }
@@ -50,6 +57,11 @@ export async function POST(request) {
       if (adminContext.error) return adminJson(adminContext, { error: adminContext.error }, { status: adminContext.status });
       bookingClient = adminContext.supabase;
     }
+    const bookingSource = adminContext
+      ? isWalkInMode
+        ? "walk_in"
+        : "admin"
+      : "online";
 
     if (!hold_id) {
       return NextResponse.json(
@@ -292,15 +304,14 @@ export async function POST(request) {
       );
     }
 
-    const confirmRpc = bookAgainSource
-      ? "confirm_book_again_booking_hold"
-      : "confirm_booking_hold";
-    const { data: appointmentId, error } = await bookingClient.rpc(
-      confirmRpc,
-      {
-        p_hold_id: hold_id,
-      }
-    );
+    const { data: appointmentId, error } = bookAgainSource
+      ? await bookingClient.rpc("confirm_book_again_booking_hold", {
+          p_hold_id: hold_id,
+        })
+      : await bookingClient.rpc("confirm_booking_hold", {
+          p_hold_id: hold_id,
+          p_booking_source: bookingSource,
+        });
 
     if (error) {
       console.error("Confirm appointment error:", error);

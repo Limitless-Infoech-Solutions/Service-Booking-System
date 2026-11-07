@@ -5,7 +5,7 @@ import { adminJson, authorizeBusinessAdmin } from "@/lib/admin-auth";
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const isAdminMode = searchParams.get("mode") === "admin";
+    const isAdminMode = ["admin", "walk-in"].includes(searchParams.get("mode"));
     let businessId = searchParams.get("business_id");
     let serviceClient = supabase;
     let adminContext = null;

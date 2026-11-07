@@ -108,11 +108,16 @@ function isCompatibleActiveHold(
 // ==================================================
 
 export default function AppointmentPage() {
-  const isAdminMode = useSyncExternalStore(
+  const bookingMode = useSyncExternalStore(
     () => () => {},
-    () => new URLSearchParams(window.location.search).get("mode") === "admin",
-    () => false
+    () => {
+      const mode = new URLSearchParams(window.location.search).get("mode");
+      return mode === "admin" || mode === "walk-in" ? mode : "online";
+    },
+    () => "online"
   );
+  const isWalkInMode = bookingMode === "walk-in";
+  const isAdminMode = bookingMode === "admin" || isWalkInMode;
   const [assignmentOptions, setAssignmentOptions] = useState({
     loading: false,
     options: [],
@@ -137,7 +142,7 @@ export default function AppointmentPage() {
     async function fetchServices() {
       try {
         const params = new URLSearchParams();
-        if (adminMode) params.set("mode", "admin");
+        if (adminMode) params.set("mode", bookingMode);
         else params.set("business_id", BUSINESS_ID);
         const response = await fetch(`/api/services?${params.toString()}`);
 
@@ -169,7 +174,7 @@ export default function AppointmentPage() {
     }
 
     fetchServices();
-  }, [isAdminMode]);
+  }, [isAdminMode, bookingMode]);
 
   // ==================================================
   // CURRENT STEP
@@ -466,7 +471,7 @@ export default function AppointmentPage() {
       if (savedHold?.holdId && savedHold.adminMode === isAdminMode) {
         try {
           const params = new URLSearchParams({ hold_id: savedHold.holdId });
-          if (isAdminMode) params.set("mode", "admin");
+          if (isAdminMode) params.set("mode", bookingMode);
           const response = await fetch(
             `/api/bookings/hold?${params.toString()}`,
             { cache: "no-store" }
@@ -524,7 +529,7 @@ export default function AppointmentPage() {
     }
 
     restoreDraft();
-  }, [isAdminMode, isLoadingServices, services, releaseCurrentBookingHold]);
+  }, [isAdminMode, bookingMode, isLoadingServices, services, releaseCurrentBookingHold]);
 
   useEffect(() => {
     if (!isDraftRestored) return;
@@ -711,7 +716,7 @@ export default function AppointmentPage() {
     const dateString = formatBookingDate(selectedDate);
     const serviceIds = selectedServices.map((service) => service.id);
     const params = new URLSearchParams({ hold_id: savedHold.holdId });
-    if (isAdminMode) params.set("mode", "admin");
+    if (isAdminMode) params.set("mode", bookingMode);
 
     try {
       const response = await fetch(`/api/bookings/hold?${params.toString()}`, {
@@ -1084,7 +1089,7 @@ export default function AppointmentPage() {
 
         const response = await fetch(
           `/api/appointments/${appointmentId}${
-            isAdminMode ? "?mode=admin" : ""
+            isAdminMode ? `?mode=${bookingMode}` : ""
           }`
         );
 
@@ -1105,7 +1110,7 @@ export default function AppointmentPage() {
     };
 
     fetchAppointment();
-  }, [step, appointmentId, isAdminMode]);
+  }, [step, appointmentId, isAdminMode, bookingMode]);
 
   // ==================================================
   // CONFIRM BOOKING
@@ -1163,6 +1168,7 @@ export default function AppointmentPage() {
       const confirmBody = {
         hold_id: hold.holdId,
         ...(isAdminMode ? { admin_mode: true } : {}),
+        ...(isWalkInMode ? { booking_mode: "walk-in" } : {}),
         ...(isAdminMode && hold.bookAgainAppointmentId
           ? { book_again_appointment_id: hold.bookAgainAppointmentId }
           : {}),
@@ -1289,7 +1295,7 @@ export default function AppointmentPage() {
                 ))}
 
               <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
-                {isAdminMode ? "Admin · New Appointment" : "Book Appointment"}
+                {isWalkInMode ? "Walk-in Appointment" : isAdminMode ? "Admin · New Appointment" : "Book Appointment"}
                 <span>•</span>
                 <span>{STEP_COPY[step].label}</span>
               </p>

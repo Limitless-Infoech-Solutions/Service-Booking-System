@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Footprints,
   Search,
 } from "lucide-react";
 
@@ -440,7 +441,7 @@ export default function AppointmentsPage() {
                     type="button"
                     onClick={() => setSelectedAppointment(appointment)}
                     aria-label={`Manage status for ${appointment.customers?.name || "appointment"}: ${statusLabel(appointment.status)}`}
-                    className={`inline-flex h-10 min-w-[120px] items-center justify-center rounded-lg border px-4 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    className={`inline-flex h-10 min-w-30 items-center justify-center rounded-lg border px-4 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                       statusClasses[appointment.status] || "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
                     }`}
                   >
@@ -452,12 +453,27 @@ export default function AppointmentsPage() {
                       "en-IN"
                     )}
                   </div>
-                  <Link
-                    href={`/admin/appointments/${appointment.id}`}
-                    className="w-fit rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-                  >
-                    View Details
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    {appointment.booking_source === "walk_in" && (
+                      <span
+                        className="group relative inline-flex cursor-help"
+                        tabIndex={0}
+                        role="img"
+                        aria-label="This appointment is walk-in."
+                      >
+                        <Footprints size={30} className="text-amber-600" />
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                          This appointment is walk-in.
+                        </span>
+                      </span>
+                    )}
+                    <Link
+                      href={`/admin/appointments/${appointment.id}`}
+                      className="w-fit rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+                    >
+                      View Details
+                    </Link>
+                  </div>
                 </div>
               </article>
             );

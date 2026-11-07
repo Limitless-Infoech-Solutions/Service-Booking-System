@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import RescheduleAppointmentModal from "@/components/admin/RescheduleAppointmentModal";
+import { Footprints } from "lucide-react";
 
 export default function AppointmentDetailsPage({ params }) {
   const [appointmentId, setAppointmentId] = useState(null);
@@ -227,9 +228,24 @@ export default function AppointmentDetailsPage({ params }) {
                   <p className="text-xs font-medium uppercase tracking-wider text-slate-300">
                     Appointment
                   </p>
-                  <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
-                    {customerName}
-                  </h1>
+                  <div className="mt-1 flex items-center gap-2">
+                    <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                      {customerName}
+                    </h1>
+                    {appointment.booking_source === "walk_in" && (
+                      <span
+                        className="group relative inline-flex cursor-help"
+                        tabIndex={0}
+                        role="img"
+                        aria-label="This appointment is walk-in."
+                      >
+                        <Footprints size={16} className="text-amber-400" />
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                          This appointment is walk-in.
+                        </span>
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-1 flex items-center gap-2 text-sm text-slate-300">
                     <Icon.Hash className="h-3.5 w-3.5" />
                     ID: {appointmentId}
